@@ -102,12 +102,20 @@ class Command(BaseCommand):
                         )
                     )
             # If neither id_col nor composite are valid, we'll fallback to row index
+            # Validate/auto-detect ID column
             if id_col and id_col not in fieldnames:
-                self.stderr.write(
-                    self.style.WARNING(
-                        f"ID column '{id_col}' not in CSV headers: {fieldnames}. Will use composite or row index."
+                # Try common alternatives automatically
+                id_candidates = [id_col, "ID", "id", "sofifa_id", "player_id"]
+                detected = next((c for c in id_candidates if c in fieldnames), None)
+                if detected:
+                    self.stdout.write(self.style.WARNING(f"ID column '{id_col}' not found; using '{detected}' from headers."))
+                    id_col = detected
+                else:
+                    self.stderr.write(
+                        self.style.WARNING(
+                            f"ID column '{id_col}' not in CSV headers: {fieldnames}. Will use composite or row index."
+                        )
                     )
-                )
 
             # Heuristics for name column if not provided
             if not name_col:
