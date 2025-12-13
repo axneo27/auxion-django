@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.dist-info/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Django
+*.log
+local_settings.py
+
+# SQLite (default dev DB)
+db.sqlite3
+
+# Static & media (generated at runtime)
+staticfiles/
+static/
+media/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Tests & coverage
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+pytest_cache/
+
+# Node (if used for frontend assets)
+node_modules/
+
+# Env files
+.env
+.env.*
+
+# Migrations cache (keep actual migration files)
+# Note: Do NOT ignore migration files in apps.
