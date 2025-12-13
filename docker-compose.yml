@@ -1,0 +1,31 @@
+services:
+  web:
+    build: .
+    image: auxion-django:latest
+    environment:
+      DJANGO_SETTINGS_MODULE: auxion.settings
+      SEED_CSV: "false"
+    volumes:
+      - db_data:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - seed
+    command: sh -c "python manage.py runserver 0.0.0.0:8000"
+    
+
+  seed:
+    build: .
+    image: auxion-django:latest
+    environment:
+      DJANGO_SETTINGS_MODULE: auxion.settings
+      PLAYER_DATA_ID_COLUMN: "ID"
+    volumes:
+      - db_data:/app
+    command: sh -c "python manage.py migrate && python manage.py import_playersdata"
+    restart: "no"
+    
+volumes:
+  db_data:
+    
+ 

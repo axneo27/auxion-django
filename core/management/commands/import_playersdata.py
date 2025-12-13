@@ -7,9 +7,7 @@ from django.conf import settings
 
 from core.models import Card
 
-# Default friendly renames for common FIFA20 columns
 RENAMES = {
-    # Columns observed in FutBinCards19.csv
     "Name": "Name",
     "Rating": "Overall",
     "Position": "Position",
@@ -21,7 +19,7 @@ RENAMES = {
     "Passing": "Passing",
     "Dribbling": "Dribbling",
     "Defending": "Defending",
-    "Phyiscality": "Physical",  # fix typo in source
+    "Phyiscality": "Physical", 
     "SkillsMoves": "Skill Moves",
     "WeakFoot": "Weak Foot",
     "BaseStats": "Base Stats",
@@ -79,6 +77,10 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f"CSV not found: {path}"))
             return
 
+        if not truncate and Card.objects.exists():
+            self.stdout.write(self.style.WARNING("Database already seeded. Use --truncate to re-seed."))
+            return
+
         if truncate:
             Card.objects.all().delete()
             self.stdout.write(self.style.WARNING("Existing Card rows deleted."))
@@ -117,7 +119,6 @@ class Command(BaseCommand):
                         )
                     )
 
-            # Heuristics for name column if not provided
             if not name_col:
                 for candidate in ("Name",):
                     if candidate in fieldnames:
@@ -149,7 +150,6 @@ class Command(BaseCommand):
                     if v is not None:
                         name_val = str(v)
 
-                # Build friendly data dict with renamed keys
                 data_out = {}
                 for k, v in row.items():
                     key = RENAMES.get(str(k), str(k))
