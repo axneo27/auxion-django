@@ -1,9 +1,16 @@
 from django.http import Http404
-from django.shortcuts import render
+from django.shortcuts import render, redirect, get_object_or_404
 from django.conf import settings
 from django.core.paginator import Paginator
+from django.contrib import messages
+import random
 
-from .models import Card
+from .models import Card, UserCard, Pack, Profile
+
+
+def get_profile():
+	profile, created = Profile.objects.get_or_create(id=1)
+	return profile
 
 # Hardcoded position groups for filter picker
 POSITIONS_GROUPS = [
@@ -133,3 +140,138 @@ def detail_view(request, item_id: str):
 		"ordered_stats": ordered,
 	}
 	return render(request, "core/detail.html", context)
+
+
+def collection_view(request):
+	profile = get_profile()
+	user_cards = UserCard.objects.filter(profile=profile).select_related('card')
+
+	# Pagination
+	try:
+		page = int(request.GET.get("page", "1"))
+		per_page = int(request.GET.get("per_page", "50"))
+	except ValueError:
+		page, per_page = 1, 50
+	page = max(page, 1)
+	per_page = max(min(per_page, 200), 1)
+
+	# Filtering
+	league = (request.GET.get("league") or "").strip()
+	club = (request.GET.get("club") or "").strip()
+	position = (request.GET.get("position") or "").strip()
+
+	def contains_json_key_value(queryset, key, value):
+		# Heuristic contains filter using string matching in JSON; portable across SQLite
+		return queryset.filter(card__data__icontains=f'"{key}": "{value}"')
+
+	if league:
+		user_cards = contains_json_key_value(user_cards, "League", league)
+	if club:
+		user_cards = contains_json_key_value(user_cards, "Club", club)
+	if position:
+		user_cards = contains_json_key_value(user_cards, "Position", position)
+
+	# Sorting
+	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
+
+	def overall_value(card: Card):
+		d = card.data or {}
+		v = d.get("Overall") or d.get("Rating") or "0"
+		try:
+			return int(str(v))
+		except Exception:
+			return 0
+
+	if sort in ("overall_desc", "overall_asc"):
+		user_cards = sorted(user_cards, key=lambda uc: overall_value(uc.card), reverse=(sort == "overall_desc"))
+	else:
+		user_cards = user_cards.order_by("card__external_id")
+
+	paginator = Paginator(user_cards, per_page)
+	page_obj = paginator.get_page(page)
+
+	cards = [uc.card for uc in page_obj.object_list]
+	context = {
+		"cards": cards,
+		"columns": ["Name", "Overall", "Position", "Club", "Nation", "Actions"],
+		"profile": profile,
+		"position_groups": POSITIONS_GROUPS,
+		"page": page_obj.number,
+		"per_page": per_page,
+		"total": paginator.count,
+		"pages": paginator.num_pages,
+		"has_prev": page_obj.has_previous(),
+		"has_next": page_obj.has_next(),
+		"prev_page": page_obj.previous_page_number() if page_obj.has_previous() else None,
+		"next_page": page_obj.next_page_number() if page_obj.has_next() else None,
+		"page_obj": page_obj,
+		"selected": {
+			"league": league,
+			"club": club,
+			"position": position,
+			"sort": sort,
+		},
+	}
+	return render(request, "core/collection.html", context)
+
+
+def packs_view(request):
+    if not Pack.objects.exists():
+        Pack.objects.create(name='Bronze Pack', price=0, num_cards=5, chances={'0-59': 0.7, '60-79': 0.3})
+        Pack.objects.create(name='Silver Pack', price=100, num_cards=5, chances={'60-79': 0.6, '80-89': 0.4})
+        Pack.objects.create(name='Gold Pack', price=500, num_cards=5, chances={'80-89': 0.5, '90-100': 0.5})
+    packs = Pack.objects.all()
+    profile = get_profile()
+    context = {
+        "packs": packs,
+        "profile": profile,
+    }
+    return render(request, "core/packs.html", context)
+
+
+def open_pack(request, pack_id):
+	pack = get_object_or_404(Pack, id=pack_id)
+	profile = get_profile()
+
+	if profile.coins < pack.price:
+		messages.error(request, "Not enough coins!")
+		return redirect('packs')
+
+	profile.coins -= pack.price
+	profile.save()
+
+	# Get cards based on chances
+	all_cards = list(Card.objects.all())
+	new_cards = []
+
+	for _ in range(pack.num_cards):
+		rand = random.random()
+		cumulative = 0
+		for range_str, prob in pack.chances.items():
+			cumulative += prob
+			if rand <= cumulative:
+				min_r, max_r = map(int, range_str.split('-'))
+				possible_cards = [c for c in all_cards if min_r <= c.get_rating() <= max_r]
+				if possible_cards:
+					chosen = random.choice(possible_cards)
+					new_cards.append(chosen)
+					# Add to collection
+					user_card, created = UserCard.objects.get_or_create(profile=profile, card=chosen)
+					if not created:
+						user_card.quantity += 1
+						user_card.save()
+				break
+
+	messages.success(request, f"Opened pack! Got {len(new_cards)} cards.")
+	return render(request, "core/pack_result.html", {"new_cards": new_cards})
+
+
+def quicksell(request, card_id):
+	profile = get_profile()
+	user_card = get_object_or_404(UserCard, profile=profile, card_id=card_id)
+	price = user_card.card.quicksell_price()
+	profile.coins += price
+	profile.save()
+	user_card.delete()
+	messages.success(request, f"Sold for {price} coins!")
+	return redirect('collection')

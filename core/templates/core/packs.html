@@ -1,0 +1,22 @@
+{% extends "core/layout.html" %}
+
+{% block title %}Packs{% endblock %}
+
+{% block content %}
+<h1>Packs</h1>
+
+<div class="row">
+    {% for pack in packs %}
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">{{ pack.name }}</h5>
+                <p class="card-text">Price: {{ pack.price }} coins</p>
+                <p class="card-text">Cards: {{ pack.num_cards }}</p>
+                <a href="{% url 'open_pack' pack.id %}" class="btn btn-primary">Open Pack</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
