@@ -3,7 +3,10 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.contrib import messages
+from django.db import models
 import random
+import os
+import uuid
 
 from .models import Card, UserCard, Pack, Profile
 
@@ -11,6 +14,9 @@ from .models import Card, UserCard, Pack, Profile
 def get_profile():
 	profile, created = Profile.objects.get_or_create(id=1)
 	return profile
+
+def is_admin_logged_in(request):
+	return request.session.get('admin_logged_in', False)
 
 # Hardcoded position groups for filter picker
 POSITIONS_GROUPS = [
@@ -44,6 +50,21 @@ POSITIONS_GROUPS = [
 ]
 
 def list_view(request):
+	if request.method == 'POST':
+		if 'login' in request.POST:
+			username = request.POST.get('username')
+			password = request.POST.get('password')
+			if username == os.getenv('ADMIN_USERNAME') and password == os.getenv('ADMIN_PASSWORD'):
+				request.session['admin_logged_in'] = True
+				return redirect('card_list')
+			else:
+				messages.error(request, 'Invalid credentials')
+		elif 'logout' in request.POST:
+			request.session.pop('admin_logged_in', None)
+			return redirect('card_list')
+
+	admin_logged_in = is_admin_logged_in(request)
+
 	# Pagination
 	try:
 		page = int(request.GET.get("page", "1"))
@@ -53,12 +74,13 @@ def list_view(request):
 	page = max(page, 1)
 	per_page = max(min(per_page, 200), 1)
 
-	qs = Card.objects.all()
+	qs = Card.objects.filter(is_deleted=False)
 
 	# Filtering
 	league = (request.GET.get("league") or "").strip()
 	club = (request.GET.get("club") or "").strip()
 	position = (request.GET.get("position") or "").strip()
+	search = (request.GET.get("search") or "").strip()
 
 	def contains_json_key_value(queryset, key, value):
 		# Heuristic contains filter using string matching in JSON; portable across SQLite
@@ -70,6 +92,12 @@ def list_view(request):
 		qs = contains_json_key_value(qs, "Club", club)
 	if position:
 		qs = contains_json_key_value(qs, "Position", position)
+	if search:
+		# Search in both name field and JSON data Name field
+		qs = qs.filter(
+			models.Q(name__icontains=search) | 
+			models.Q(data__icontains=f'"Name": "{search}"')
+		)
 
 	# Sorting
 	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
@@ -111,9 +139,124 @@ def list_view(request):
 			"club": club,
 			"position": position,
 			"sort": sort,
+			"search": search,
 		},
+		"admin_logged_in": admin_logged_in,
 	}
 	return render(request, "core/list.html", context)
+
+
+def deleted_cards_view(request):
+	if not is_admin_logged_in(request):
+		return redirect('card_list')
+
+	if request.method == 'POST':
+		if 'restore' in request.POST:
+			try:
+				card_id = request.POST.get('card_id')
+				card = Card.objects.get(id=card_id, is_deleted=True)
+				card.is_deleted = False
+				card.save()
+				messages.success(request, f'Card {card.name} restored.')
+			except Card.DoesNotExist:
+				messages.error(request, 'Card not found.')
+		elif 'permanent_delete' in request.POST:
+			try:
+				card_id = request.POST.get('card_id')
+				card = Card.objects.get(id=card_id, is_deleted=True)
+				card.delete()
+				messages.success(request, f'Card {card.name} permanently deleted.')
+			except Card.DoesNotExist:
+				messages.error(request, 'Card not found.')
+		return redirect('deleted_cards')
+
+	deleted_cards = Card.objects.filter(is_deleted=True).order_by('name')
+
+	context = {
+		'cards': deleted_cards,
+		'columns': ["Name", "Nation", "League", "Club", "Overall", "Position"],
+	}
+	return render(request, "core/deleted_cards.html", context)
+
+
+def create_card_view(request):
+	if not is_admin_logged_in(request):
+		return redirect('card_list')
+
+	if request.method == 'POST':
+		# Get form data
+		name = request.POST.get('name', '').strip()
+		overall = request.POST.get('overall', '').strip()
+		position = request.POST.get('position', '').strip()
+		nation = request.POST.get('nation', '').strip()
+		league = request.POST.get('league', '').strip()
+		club = request.POST.get('club', '').strip()
+		picture = request.POST.get('picture', '').strip()
+		
+		# Stats
+		pace = request.POST.get('pace', '').strip()
+		shooting = request.POST.get('shooting', '').strip()
+		passing = request.POST.get('passing', '').strip()
+		dribbling = request.POST.get('dribbling', '').strip()
+		defending = request.POST.get('defending', '').strip()
+		physical = request.POST.get('physical', '').strip()
+
+		if not name or not overall or not position:
+			messages.error(request, 'Name, Overall Rating, and Position are required.')
+			return redirect('create_card')
+
+		# Generate unique external_id
+		external_id = str(uuid.uuid4())[:8]
+
+		# Create card data dict
+		data = {}
+		if name: data['Name'] = name
+		if overall: data['Overall'] = overall
+		if position: data['Position'] = position
+		if nation: data['Nation'] = nation
+		if league: data['League'] = league
+		if club: data['Club'] = club
+		if picture: data['Picture'] = picture
+		
+		# Add stats
+		if pace: data['Pace'] = pace
+		if shooting: data['Shooting'] = shooting
+		if passing: data['Passing'] = passing
+		if dribbling: data['Dribbling'] = dribbling
+		if defending: data['Defending'] = defending
+		if physical: data['Physical'] = physical
+
+		# Create the card
+		Card.objects.create(
+			external_id=external_id,
+			name=name or None,
+			data=data
+		)
+
+		messages.success(request, f'Card "{name}" created successfully with ID: {external_id}.')
+		return redirect('card_list')
+
+	return render(request, "core/create_card.html")
+
+
+def delete_card(request, card_id):
+	if not is_admin_logged_in(request):
+		return redirect('card_list')
+	
+	try:
+		card = Card.objects.get(id=card_id)
+		if request.method == 'POST':
+			if 'delete' in request.POST:
+				card.is_deleted = True
+				card.save()
+				messages.success(request, f'Card {card.name} deleted.')
+			elif 'restore' in request.POST:
+				card.is_deleted = False
+				card.save()
+				messages.success(request, f'Card {card.name} restored.')
+		return redirect('card_list')
+	except Card.DoesNotExist:
+		raise Http404
 
 
 def detail_view(request, item_id: str):
@@ -159,6 +302,7 @@ def collection_view(request):
 	league = (request.GET.get("league") or "").strip()
 	club = (request.GET.get("club") or "").strip()
 	position = (request.GET.get("position") or "").strip()
+	search = (request.GET.get("search") or "").strip()
 
 	def contains_json_key_value(queryset, key, value):
 		# Heuristic contains filter using string matching in JSON; portable across SQLite
@@ -170,6 +314,12 @@ def collection_view(request):
 		user_cards = contains_json_key_value(user_cards, "Club", club)
 	if position:
 		user_cards = contains_json_key_value(user_cards, "Position", position)
+	if search:
+		# Search in both name field and JSON data Name field
+		user_cards = user_cards.filter(
+			models.Q(card__name__icontains=search) | 
+			models.Q(card__data__icontains=f'"Name": "{search}"')
+		)
 
 	# Sorting
 	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
@@ -210,6 +360,7 @@ def collection_view(request):
 			"club": club,
 			"position": position,
 			"sort": sort,
+			"search": search,
 		},
 	}
 	return render(request, "core/collection.html", context)
@@ -219,7 +370,7 @@ def packs_view(request):
     if not Pack.objects.exists():
         Pack.objects.create(name='Bronze Pack', price=0, num_cards=5, chances={'0-59': 0.7, '60-79': 0.3})
         Pack.objects.create(name='Silver Pack', price=100, num_cards=5, chances={'60-79': 0.6, '80-89': 0.4})
-        Pack.objects.create(name='Gold Pack', price=500, num_cards=5, chances={'80-89': 0.5, '90-100': 0.5})
+        Pack.objects.create(name='Gold Pack', price=500, num_cards=5, chances={'70-89': 0.7, '90-100': 0.3})
     packs = Pack.objects.all()
     profile = get_profile()
     context = {
@@ -240,8 +391,7 @@ def open_pack(request, pack_id):
 	profile.coins -= pack.price
 	profile.save()
 
-	# Get cards based on chances
-	all_cards = list(Card.objects.all())
+	all_cards = list(Card.objects.filter(is_deleted=False))
 	new_cards = []
 
 	for _ in range(pack.num_cards):
@@ -251,11 +401,14 @@ def open_pack(request, pack_id):
 			cumulative += prob
 			if rand <= cumulative:
 				min_r, max_r = map(int, range_str.split('-'))
-				possible_cards = [c for c in all_cards if min_r <= c.get_rating() <= max_r]
+				possible_cards = []
+				for c in all_cards:
+					if min_r <= c.get_rating() <= max_r:
+						possible_cards.append(c)
 				if possible_cards:
 					chosen = random.choice(possible_cards)
 					new_cards.append(chosen)
-					# Add to collection
+					
 					user_card, created = UserCard.objects.get_or_create(profile=profile, card=chosen)
 					if not created:
 						user_card.quantity += 1

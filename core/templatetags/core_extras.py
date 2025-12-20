@@ -16,7 +16,7 @@ def player_image(row):
         data = getattr(row, "data", {}) or {}
         for key in ("Picture", "Image", "Photo", "Headshot", "PlayerPic"):
             val = data.get(key)
-            if isinstance(val, str) and val.startswith("http"):
+            if isinstance(val, str) and (val.startswith("http") or val.startswith("/media")):
                 return val
         return ""
     except Exception:

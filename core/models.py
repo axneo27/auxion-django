@@ -5,6 +5,7 @@ class Card(models.Model):
 	external_id = models.CharField(max_length=64, unique=True, db_index=True)
 	name = models.CharField(max_length=256, blank=True, null=True)
 	data = models.JSONField(default=dict)
+	is_deleted = models.BooleanField(default=False)
 
 	def __str__(self):
 		return self.name or str(self.external_id)
@@ -24,7 +25,7 @@ class Card(models.Model):
 
 
 class Profile(models.Model):
-	coins = models.IntegerField(default=1000)  # Start with some coins
+	coins = models.IntegerField(default=0) 
 
 	def __str__(self):
 		return "User Profile"
@@ -46,8 +47,7 @@ class Pack(models.Model):
 	name = models.CharField(max_length=256)
 	price = models.IntegerField()  # in coins, 0 for free
 	num_cards = models.IntegerField(default=5)
-	# Chances: JSON with rating ranges and probabilities
-	# e.g. {"80-100": 0.1, "60-79": 0.3, "0-59": 0.6}
+
 	chances = models.JSONField(default=dict)
 
 	def __str__(self):

@@ -20,6 +20,10 @@
 
 <form method="get" class="filters mb-3">
     <div class="row g-3 align-items-end">
+        <div class="col-12 col-sm-6 col-md-4">
+            <label class="form-label">Search by Name</label>
+            <input type="text" class="form-control" name="search" value="{{ selected.search }}" placeholder="Enter player name..." />
+        </div>
         <div class="col-12 col-sm-6 col-md-3">
             <label class="form-label">League</label>
             <input type="text" class="form-control" name="league" value="{{ selected.league }}" placeholder="e.g., Premier League" />

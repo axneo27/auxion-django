@@ -1,0 +1,79 @@
+{% extends "core/layout.html" %}
+
+{% block title %}Deleted Cards{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Maintain correct image proportions: fixed height, auto width */
+    .player-thumb { height: 80px; width: auto; object-fit: contain; border-radius: 6px; margin-right: 12px; vertical-align: middle; }
+    .filters .form-label { font-weight: 600; }
+    .page-header { padding: 16px 0; }
+    /* Slightly larger row height via cell padding */
+    table.table td, table.table th { padding: 0.55rem 1rem; vertical-align: middle; font-size: 1.06rem; }
+    .name-cell a { font-size: 1.08rem; }
+    /* Ensure name cell content aligns nicely */
+    .name-cell { display: flex; align-items: center; gap: 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3 page-header">
+    <h1 class="h3 m-0">Deleted Cards</h1>
+    <a href="{% url 'card_list' %}" class="btn btn-outline-secondary">← Back to Cards</a>
+</div>
+
+{% load core_extras %}
+{% if cards %}
+<table class="table table-striped table-hover">
+    <thead>
+        <tr>
+            {% for col in columns %}
+                <th>{{ col }}</th>
+            {% endfor %}
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in cards %}
+            <tr>
+                {% for col in columns %}
+                    {% if col == "Name" %}
+                        <td class="name-cell">
+                            {% with pic=row|player_image %}
+                                {% if pic %}
+                                    <img src="{{ pic }}" alt="" class="player-thumb" />
+                                {% endif %}
+                            {% endwith %}
+                            <a href="/{{ row.external_id }}/">{{ row.data|get_item:"Name" }}</a>
+                        </td>
+                    {% elif col == "Nation" %}
+                        {# Support both Nation and Country keys #}
+                        <td>{% with n=row.data|get_item:"Nation" %}{% if n %}{{ n }}{% else %}{{ row.data|get_item:"Country" }}{% endif %}{% endwith %}</td>
+                    {% elif col == "Overall" %}
+                        {# Support both Overall and Rating keys #}
+                        <td>{% with r=row.data|get_item:"Overall" %}{% if r %}{{ r }}{% else %}{{ row.data|get_item:"Rating" }}{% endif %}{% endwith %}</td>
+                    {% else %}
+                        <td>{{ row.data|get_item:col }}</td>
+                    {% endif %}
+                {% endfor %}
+                <td>
+                    <form method="post" class="d-inline me-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="card_id" value="{{ row.id }}" />
+                        <button type="submit" name="restore" class="btn btn-sm btn-success">Restore</button>
+                    </form>
+                    <form method="post" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="card_id" value="{{ row.id }}" />
+                        <button type="submit" name="permanent_delete" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Permanently delete this card? This action cannot be undone!')">Delete Forever</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No deleted cards.</p>
+{% endif %}
+{% endblock %}

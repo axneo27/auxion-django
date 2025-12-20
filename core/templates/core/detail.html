@@ -114,7 +114,7 @@ body{
   <table>
     <tbody>
       {% for key, value in ordered_stats %}
-        {% if key != "ID" and value|slice:":4" != "http" %}
+        {% if key not in "ID,Picture" and value|slice:":4" != "http" %}
         <tr>
           <th>{{ key }}</th>
           <td>{{ value }}</td>
