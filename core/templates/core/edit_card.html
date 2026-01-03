@@ -3,7 +3,7 @@
 {% load static %}
 
 {% block content %}
-{% with page_title="Create New Card" button_text="Create Card" initial_data=initial_data %}
+{% with page_title="Edit Card" button_text="Update Card" form_action=form_action initial_data=initial_data %}
 {{ block.super }}
 {% endwith %}
 {% endblock %}

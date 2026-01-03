@@ -119,7 +119,15 @@
                         <td>{{ row.data|get_item:col }}</td>
                     {% endif %}
                 {% endfor %}
-                {% if admin_logged_in %}
+                {% if admin_logged_in and row.data|get_item:"is_admin_created" %}
+                    <td>
+                        <a href="{% url 'edit_card' row.id %}" class="btn btn-sm btn-warning me-1">Edit</a>
+                        <form method="post" action="{% url 'delete_card' row.id %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" name="delete" class="btn btn-sm btn-danger" onclick="return confirm('Delete this card?')">Delete</button>
+                        </form>
+                    </td>
+                {% elif admin_logged_in %}
                     <td>
                         <form method="post" action="{% url 'delete_card' row.id %}" class="d-inline">
                             {% csrf_token %}

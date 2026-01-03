@@ -192,6 +192,8 @@ def create_card_view(request):
 		league = request.POST.get('league', '').strip()
 		club = request.POST.get('club', '').strip()
 		picture = request.POST.get('picture', '').strip()
+		nation_pic = request.POST.get('nation_pic', '').strip()
+		club_pic = request.POST.get('club_pic', '').strip()
 		
 		# Stats
 		pace = request.POST.get('pace', '').strip()
@@ -217,6 +219,8 @@ def create_card_view(request):
 		if league: data['League'] = league
 		if club: data['Club'] = club
 		if picture: data['Picture'] = picture
+		if nation_pic: data['NationPic'] = nation_pic
+		if club_pic: data['ClubPic'] = club_pic
 		
 		# Add stats
 		if pace: data['Pace'] = pace
@@ -225,6 +229,9 @@ def create_card_view(request):
 		if dribbling: data['Dribbling'] = dribbling
 		if defending: data['Defending'] = defending
 		if physical: data['Physical'] = physical
+
+		# Mark as admin created
+		data['is_admin_created'] = True
 
 		# Create the card
 		Card.objects.create(
@@ -236,7 +243,90 @@ def create_card_view(request):
 		messages.success(request, f'Card "{name}" created successfully with ID: {external_id}.')
 		return redirect('card_list')
 
-	return render(request, "core/create_card.html")
+	return render(request, "core/create_card.html", {'initial_data': {}})
+
+
+def edit_card_view(request, card_id):
+	if not is_admin_logged_in(request):
+		return redirect('card_list')
+
+	try:
+		card = Card.objects.get(id=card_id)
+	except Card.DoesNotExist:
+		raise Http404
+
+	if request.method == 'POST':
+		# Get form data
+		name = request.POST.get('name', '').strip()
+		overall = request.POST.get('overall', '').strip()
+		position = request.POST.get('position', '').strip()
+		nation = request.POST.get('nation', '').strip()
+		league = request.POST.get('league', '').strip()
+		club = request.POST.get('club', '').strip()
+		picture = request.POST.get('picture', '').strip()
+		nation_pic = request.POST.get('nation_pic', '').strip()
+		club_pic = request.POST.get('club_pic', '').strip()
+		
+		# Stats
+		pace = request.POST.get('pace', '').strip()
+		shooting = request.POST.get('shooting', '').strip()
+		passing = request.POST.get('passing', '').strip()
+		dribbling = request.POST.get('dribbling', '').strip()
+		defending = request.POST.get('defending', '').strip()
+		physical = request.POST.get('physical', '').strip()
+
+		if not name or not overall or not position:
+			messages.error(request, 'Name, Overall Rating, and Position are required.')
+			return redirect('edit_card', card_id=card_id)
+
+		# Update card data dict
+		data = card.data or {}
+		data.update({
+			'Name': name,
+			'Overall': overall,
+			'Position': position,
+			'Nation': nation,
+			'League': league,
+			'Club': club,
+			'Picture': picture,
+			'NationPic': nation_pic,
+			'ClubPic': club_pic,
+			'Pace': pace,
+			'Shooting': shooting,
+			'Passing': passing,
+			'Dribbling': dribbling,
+			'Defending': defending,
+			'Physical': physical,
+		})
+
+		# Update the card
+		card.name = name or None
+		card.data = data
+		card.save()
+
+		messages.success(request, f'Card "{name}" updated successfully.')
+		return redirect('card_list')
+
+	# Pre-fill form with existing data
+	initial_data = {
+		'name': card.name or card.data.get('Name', ''),
+		'overall': card.data.get('Overall', ''),
+		'position': card.data.get('Position', ''),
+		'nation': card.data.get('Nation', ''),
+		'league': card.data.get('League', ''),
+		'club': card.data.get('Club', ''),
+		'picture': card.data.get('Picture', ''),
+		'nation_pic': card.data.get('NationPic', ''),
+		'club_pic': card.data.get('ClubPic', ''),
+		'pace': card.data.get('Pace', ''),
+		'shooting': card.data.get('Shooting', ''),
+		'passing': card.data.get('Passing', ''),
+		'dribbling': card.data.get('Dribbling', ''),
+		'defending': card.data.get('Defending', ''),
+		'physical': card.data.get('Physical', ''),
+	}
+
+	return render(request, "core/edit_card.html", {'card': card, 'initial_data': initial_data, 'form_action': request.path})
 
 
 def delete_card(request, card_id):
