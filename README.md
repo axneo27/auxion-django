@@ -28,8 +28,6 @@ Defaults are configured in `auxion/settings.py`:
 You can override these via environment variables or CLI flags. To import using the included CSV:
 
 ```zsh
-# Optional: ensure virtualenv active
-source .venv/bin/activate
 
 # Seed database from the included CSV
 python3 manage.py import_playersdata 
