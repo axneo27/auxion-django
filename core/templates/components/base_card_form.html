@@ -44,7 +44,7 @@
     <div class="col-lg-6">
         <div class="card">
             <div class="card-body">
-                <form method="post" id="cardForm" {% if form_action %}action="{{ form_action }}"{% endif %}>
+                <form method="post" enctype="multipart/form-data" id="cardForm" {% if form_action %}action="{{ form_action }}"{% endif %}>
                     {% csrf_token %}
 
                     <div class="row">
@@ -90,7 +90,13 @@
                         <label for="picture" class="form-label">Picture URL</label>
                         <input type="url" class="form-control" id="picture" name="picture"
                                placeholder="https://example.com/player-image.jpg" value="{{ initial_data.picture|default:'' }}">
-                        <div class="form-text">Enter a URL to the player image</div>
+                        <div class="form-text">Provide a URL or upload a file below.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="picture_file" class="form-label">Upload Picture (optional)</label>
+                        <input type="file" class="form-control" id="picture_file" name="picture_file" accept="image/*">
+                        <div class="form-text">If provided, this will be used instead of the URL.</div>
                     </div>
 
                     <div class="mb-3">
@@ -204,6 +210,7 @@ function updatePreview() {
     const overall = document.getElementById('overall').value;
     const position = document.getElementById('position').value;
     const picture = document.getElementById('picture').value;
+    const pictureFileInput = document.getElementById('picture_file');
     const nation_pic = document.getElementById('nation_pic').value;
     const club_pic = document.getElementById('club_pic').value;
     const pace = document.getElementById('pace').value;
@@ -224,8 +231,14 @@ function updatePreview() {
     document.getElementById('previewPhysical').textContent = physical || '-';
 
     const previewImg = document.getElementById('previewPlayerImg');
-    if (picture) {
-        previewImg.src = picture;
+    let previewSrc = null;
+    if (pictureFileInput && pictureFileInput.files && pictureFileInput.files[0]) {
+        previewSrc = URL.createObjectURL(pictureFileInput.files[0]);
+    } else if (picture) {
+        previewSrc = picture;
+    }
+    if (previewSrc) {
+        previewImg.src = previewSrc;
         previewImg.style.display = 'block';
     } else {
         previewImg.style.display = 'none';
@@ -262,5 +275,7 @@ updatePreview();
 document.querySelectorAll('#cardForm input').forEach(input => {
     input.addEventListener('input', updatePreview);
 });
+// Also react to file selection changes
+document.getElementById('picture_file')?.addEventListener('change', updatePreview);
 </script>
 {% endblock %}

@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.paginator import Paginator
 from django.contrib import messages
 from django.db import models
+from django.core.files.storage import default_storage
 import random
 import os
 import uuid
@@ -18,7 +19,6 @@ def get_profile():
 def is_admin_logged_in(request):
 	return request.session.get('admin_logged_in', False)
 
-# Hardcoded position groups for filter picker
 POSITIONS_GROUPS = [
 	{"label": "Goalkeeper", "options": [("GK", "Goalkeeper")]},
 	{"label": "Defenders", "options": [
@@ -65,7 +65,6 @@ def list_view(request):
 
 	admin_logged_in = is_admin_logged_in(request)
 
-	# Pagination
 	try:
 		page = int(request.GET.get("page", "1"))
 		per_page = int(request.GET.get("per_page", "50"))
@@ -76,14 +75,13 @@ def list_view(request):
 
 	qs = Card.objects.filter(is_deleted=False)
 
-	# Filtering
 	league = (request.GET.get("league") or "").strip()
 	club = (request.GET.get("club") or "").strip()
 	position = (request.GET.get("position") or "").strip()
 	search = (request.GET.get("search") or "").strip()
 
 	def contains_json_key_value(queryset, key, value):
-		# Heuristic contains filter using string matching in JSON; portable across SQLite
+
 		return queryset.filter(data__icontains=f'"{key}": "{value}"')
 
 	if league:
@@ -93,13 +91,11 @@ def list_view(request):
 	if position:
 		qs = contains_json_key_value(qs, "Position", position)
 	if search:
-		# Search in both name field and JSON data Name field
 		qs = qs.filter(
 			models.Q(name__icontains=search) | 
 			models.Q(data__icontains=f'"Name": "{search}"')
 		)
 
-	# Sorting
 	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
 
 	def overall_value(card: Card):
@@ -118,7 +114,6 @@ def list_view(request):
 	paginator = Paginator(qs, per_page)
 	page_obj = paginator.get_page(page)
 
-	# Fixed columns to show overall info + card type
 	columns = ["Name", "Nation", "League", "Club", "Overall", "Position", "Revision"]
 
 	context = {
@@ -164,6 +159,23 @@ def deleted_cards_view(request):
 			try:
 				card_id = request.POST.get('card_id')
 				card = Card.objects.get(id=card_id, is_deleted=True)
+
+				try:
+					data = card.data or {}
+					pic = data.get('Picture') or ''
+					if isinstance(pic, str):
+
+						if pic.startswith(settings.MEDIA_URL):
+							rel_path = pic[len(settings.MEDIA_URL):]
+							file_path = os.path.join(str(settings.MEDIA_ROOT), rel_path)
+
+							abs_media_root = os.path.abspath(str(settings.MEDIA_ROOT))
+							abs_file_path = os.path.abspath(file_path)
+							if abs_file_path.startswith(abs_media_root) and os.path.isfile(abs_file_path):
+								os.remove(abs_file_path)
+				except Exception:
+					pass
+
 				card.delete()
 				messages.success(request, f'Card {card.name} permanently deleted.')
 			except Card.DoesNotExist:
@@ -184,7 +196,7 @@ def create_card_view(request):
 		return redirect('card_list')
 
 	if request.method == 'POST':
-		# Get form data
+
 		name = request.POST.get('name', '').strip()
 		overall = request.POST.get('overall', '').strip()
 		position = request.POST.get('position', '').strip()
@@ -192,10 +204,10 @@ def create_card_view(request):
 		league = request.POST.get('league', '').strip()
 		club = request.POST.get('club', '').strip()
 		picture = request.POST.get('picture', '').strip()
+		picture_file = request.FILES.get('picture_file')
 		nation_pic = request.POST.get('nation_pic', '').strip()
 		club_pic = request.POST.get('club_pic', '').strip()
 		
-		# Stats
 		pace = request.POST.get('pace', '').strip()
 		shooting = request.POST.get('shooting', '').strip()
 		passing = request.POST.get('passing', '').strip()
@@ -207,10 +219,8 @@ def create_card_view(request):
 			messages.error(request, 'Name, Overall Rating, and Position are required.')
 			return redirect('create_card')
 
-		# Generate unique external_id
 		external_id = str(uuid.uuid4())[:8]
 
-		# Create card data dict
 		data = {}
 		if name: data['Name'] = name
 		if overall: data['Overall'] = overall
@@ -222,7 +232,6 @@ def create_card_view(request):
 		if nation_pic: data['NationPic'] = nation_pic
 		if club_pic: data['ClubPic'] = club_pic
 		
-		# Add stats
 		if pace: data['Pace'] = pace
 		if shooting: data['Shooting'] = shooting
 		if passing: data['Passing'] = passing
@@ -230,10 +239,14 @@ def create_card_view(request):
 		if defending: data['Defending'] = defending
 		if physical: data['Physical'] = physical
 
-		# Mark as admin created
+		if picture_file:
+			ext = os.path.splitext(picture_file.name)[1].lower()
+			filename = f"players/{uuid.uuid4().hex}{ext}"
+			saved_path = default_storage.save(filename, picture_file)
+			data['Picture'] = f"{settings.MEDIA_URL}{saved_path}"
+
 		data['is_admin_created'] = True
 
-		# Create the card
 		Card.objects.create(
 			external_id=external_id,
 			name=name or None,
@@ -256,7 +269,7 @@ def edit_card_view(request, card_id):
 		raise Http404
 
 	if request.method == 'POST':
-		# Get form data
+
 		name = request.POST.get('name', '').strip()
 		overall = request.POST.get('overall', '').strip()
 		position = request.POST.get('position', '').strip()
@@ -267,7 +280,6 @@ def edit_card_view(request, card_id):
 		nation_pic = request.POST.get('nation_pic', '').strip()
 		club_pic = request.POST.get('club_pic', '').strip()
 		
-		# Stats
 		pace = request.POST.get('pace', '').strip()
 		shooting = request.POST.get('shooting', '').strip()
 		passing = request.POST.get('passing', '').strip()
@@ -279,7 +291,6 @@ def edit_card_view(request, card_id):
 			messages.error(request, 'Name, Overall Rating, and Position are required.')
 			return redirect('edit_card', card_id=card_id)
 
-		# Update card data dict
 		data = card.data or {}
 		data.update({
 			'Name': name,
@@ -299,7 +310,13 @@ def edit_card_view(request, card_id):
 			'Physical': physical,
 		})
 
-		# Update the card
+		picture_file = request.FILES.get('picture_file')
+		if picture_file:
+			ext = os.path.splitext(picture_file.name)[1].lower()
+			filename = f"players/{uuid.uuid4().hex}{ext}"
+			saved_path = default_storage.save(filename, picture_file)
+			data['Picture'] = f"{settings.MEDIA_URL}{saved_path}"
+
 		card.name = name or None
 		card.data = data
 		card.save()
@@ -307,7 +324,6 @@ def edit_card_view(request, card_id):
 		messages.success(request, f'Card "{name}" updated successfully.')
 		return redirect('card_list')
 
-	# Pre-fill form with existing data
 	initial_data = {
 		'name': card.name or card.data.get('Name', ''),
 		'overall': card.data.get('Overall', ''),
@@ -354,7 +370,7 @@ def detail_view(request, item_id: str):
 		obj = Card.objects.get(external_id=str(item_id))
 	except Card.DoesNotExist:
 		raise Http404("Item not found")
-	# Prioritize common fields for nicer presentation, then show the rest sorted
+	
 	priority = ["Name", "Position", "Overall", "Club", "Nation"]
 	data = obj.data or {}
 	ordered = []
@@ -379,7 +395,6 @@ def collection_view(request):
 	profile = get_profile()
 	user_cards = UserCard.objects.filter(profile=profile).select_related('card')
 
-	# Pagination
 	try:
 		page = int(request.GET.get("page", "1"))
 		per_page = int(request.GET.get("per_page", "50"))
@@ -388,14 +403,13 @@ def collection_view(request):
 	page = max(page, 1)
 	per_page = max(min(per_page, 200), 1)
 
-	# Filtering
 	league = (request.GET.get("league") or "").strip()
 	club = (request.GET.get("club") or "").strip()
 	position = (request.GET.get("position") or "").strip()
 	search = (request.GET.get("search") or "").strip()
 
 	def contains_json_key_value(queryset, key, value):
-		# Heuristic contains filter using string matching in JSON; portable across SQLite
+
 		return queryset.filter(card__data__icontains=f'"{key}": "{value}"')
 
 	if league:
@@ -405,13 +419,12 @@ def collection_view(request):
 	if position:
 		user_cards = contains_json_key_value(user_cards, "Position", position)
 	if search:
-		# Search in both name field and JSON data Name field
+
 		user_cards = user_cards.filter(
 			models.Q(card__name__icontains=search) | 
 			models.Q(card__data__icontains=f'"Name": "{search}"')
 		)
 
-	# Sorting
 	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
 
 	def overall_value(card: Card):
