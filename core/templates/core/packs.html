@@ -4,6 +4,7 @@
 
 {% block content %}
 <h1>Packs</h1>
+<p>Coins: <span id="coins">{{ coins }}</span></p>
 
 <div class="row">
     {% for pack in packs %}
@@ -13,10 +14,34 @@
                 <h5 class="card-title">{{ pack.name }}</h5>
                 <p class="card-text">Price: {{ pack.price }} coins</p>
                 <p class="card-text">Cards: {{ pack.num_cards }}</p>
-                <a href="{% url 'open_pack' pack.id %}" class="btn btn-primary">Open Pack</a>
+                <a href="{% url 'open_pack' pack.id %}?coins={{ coins }}" id="open-pack-{{ pack.id }}" data-price="{{ pack.price }}" onclick="return checkCoins(this)" class="btn btn-primary">Open Pack</a>
             </div>
         </div>
     </div>
     {% endfor %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const coins = localStorage.getItem('coins') || '0';
+    document.getElementById('coins').textContent = coins;
+    // Update pack links with current coins
+    const packLinks = document.querySelectorAll('[id^="open-pack-"]');
+    packLinks.forEach(link => {
+        const packId = link.id.replace('open-pack-', '');
+        link.href = '/packs/' + packId + '/open/?coins=' + coins;
+    });
+});
+
+function checkCoins(element) {
+    const price = parseInt(element.dataset.price);
+    const coins = parseInt(localStorage.getItem('coins') || '0');
+    if (coins >= price) {
+        return true;
+    } else {
+        alert('Not enough coins!');
+        return false;
+    }
+}
+</script>
 {% endblock %}

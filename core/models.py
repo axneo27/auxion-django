@@ -24,25 +24,6 @@ class Card(models.Model):
 		return rating * 10
 
 
-class Profile(models.Model):
-	coins = models.IntegerField(default=0) 
-
-	def __str__(self):
-		return "User Profile"
-
-
-class UserCard(models.Model):
-	profile = models.ForeignKey(Profile, on_delete=models.CASCADE)
-	card = models.ForeignKey(Card, on_delete=models.CASCADE)
-	quantity = models.IntegerField(default=1)
-
-	class Meta:
-		unique_together = ('profile', 'card')
-
-	def __str__(self):
-		return f"Profile - {self.card.name}"
-
-
 class Pack(models.Model):
 	name = models.CharField(max_length=256)
 	price = models.IntegerField()  # in coins, 0 for free

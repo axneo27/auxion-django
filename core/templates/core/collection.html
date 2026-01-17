@@ -16,9 +16,12 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3 page-header">
     <h1 class="h3 m-0">My Collection</h1>
+    <div class="coins-display">Coins: <span id="coins">{{ coins }}</span></div>
 </div>
 
 <form method="get" class="filters mb-3">
+    <input type="hidden" name="owned_cards" id="owned_cards_input" />
+    <input type="hidden" name="coins" id="coins_input" />
     <div class="row g-3 align-items-end">
         <div class="col-12 col-sm-6 col-md-4">
             <label class="form-label">Search by Name</label>
@@ -88,28 +91,30 @@
         </tr>
     </thead>
     <tbody>
-        {% for card in cards %}
+        {% for item in cards %}
             <tr>
                 {% for col in columns %}
                     {% if col == "Name" %}
                         <td class="name-cell">
-                            {% with pic=card|player_image %}
+                            {% with pic=item.card|player_image %}
                                 {% if pic %}
                                     <img src="{{ pic }}" alt="" class="player-thumb" />
                                 {% endif %}
                             {% endwith %}
-                            <a href="/{{ card.external_id }}/">{{ card.data.Name }}</a>
+                            <a href="/{{ item.card.external_id }}/">{{ item.card.data.Name }}</a>
                         </td>
                     {% elif col == "Overall" %}
-                        <td>{{ card.get_rating }}</td>
+                        <td>{{ item.card.get_rating }}</td>
                     {% elif col == "Nation" %}
-                        <td>{% with n=card.data|get_item:"Nation" %}{% if n %}{{ n }}{% else %}{{ card.data|get_item:"Country" }}{% endif %}{% endwith %}</td>
+                        <td>{% with n=item.card.data|get_item:"Nation" %}{% if n %}{{ n }}{% else %}{{ item.card.data|get_item:"Country" }}{% endif %}{% endwith %}</td>
+                    {% elif col == "Quantity" %}
+                        <td>{{ item.qty }}</td>
                     {% elif col == "Actions" %}
                         <td>
-                            <a href="{% url 'quicksell' card.id %}" class="btn btn-sm btn-danger" onclick="return confirm('Sell for {{ card.quicksell_price }} coins?')">Quicksell ({{ card.quicksell_price }} coins)</a>
+                            <button class="btn btn-sm btn-danger" data-card-id="{{ item.card.external_id|escapejs }}" data-price="{{ item.card.quicksell_price }}" onclick="confirmSell(this)">Quicksell ({{ item.card.quicksell_price }} coins)</button>
                         </td>
                     {% else %}
-                        <td>{{ card.data|get_item:col }}</td>
+                        <td>{{ item.card.data|get_item:col }}</td>
                     {% endif %}
                 {% endfor %}
             </tr>
@@ -150,4 +155,45 @@
 {% else %}
 <p>No cards in collection.</p>
 {% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ownedCards = localStorage.getItem('ownedCards') || '{}';
+    document.getElementById('owned_cards_input').value = ownedCards;
+    const coins = localStorage.getItem('coins') || '0';
+    document.getElementById('coins_input').value = coins;
+    document.getElementById('coins').textContent = coins;
+
+    // If no owned_cards in URL, submit the form to load with data
+    const urlParams = new URLSearchParams(window.location.search);
+    if (!urlParams.has('owned_cards') && ownedCards !== '{}') {
+        document.querySelector('.filters').submit();
+    }
+});
+
+function confirmSell(element) {
+    const cardId = element.dataset.cardId;
+    const price = parseInt(element.dataset.price);
+    if (confirm('Sell for ' + price + ' coins?')) {
+        // Remove from localStorage
+        let ownedCards = JSON.parse(localStorage.getItem('ownedCards') || '{}');
+        if (ownedCards[cardId]) {
+            ownedCards[cardId] -= 1;
+            if (ownedCards[cardId] <= 0) {
+                delete ownedCards[cardId];
+            }
+        }
+        localStorage.setItem('ownedCards', JSON.stringify(ownedCards));
+        // Add coins
+        let coins = parseInt(localStorage.getItem('coins') || '0');
+        coins += price;
+        localStorage.setItem('coins', coins.toString());
+        document.getElementById('coins').textContent = coins;
+        // Update the form and submit to refresh the list
+        document.getElementById('owned_cards_input').value = JSON.stringify(ownedCards);
+        document.querySelector('.filters').submit();
+    }
+}
+</script>
+
 {% endblock %}

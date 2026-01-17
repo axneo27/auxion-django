@@ -8,13 +8,10 @@ from django.core.files.storage import default_storage
 import random
 import os
 import uuid
+import json
 
-from .models import Card, UserCard, Pack, Profile
+from .models import Card, Pack
 
-
-def get_profile():
-	profile, created = Profile.objects.get_or_create(id=1)
-	return profile
 
 def is_admin_logged_in(request):
 	return request.session.get('admin_logged_in', False)
@@ -392,8 +389,27 @@ def detail_view(request, item_id: str):
 
 
 def collection_view(request):
-	profile = get_profile()
-	user_cards = UserCard.objects.filter(profile=profile).select_related('card')
+	owned_cards_str = request.GET.get('owned_cards', '{}')
+	try:
+		owned_cards = json.loads(owned_cards_str)
+	except json.JSONDecodeError:
+		owned_cards = {}
+	
+	# owned_cards is dict {card_id: quantity}
+	owned_cards_list = []
+	for card_id, qty in owned_cards.items():
+		if qty > 0:
+			try:
+				card = Card.objects.get(external_id=card_id)
+				owned_cards_list.append({'card': card, 'qty': qty})
+			except Card.DoesNotExist:
+				pass
+	user_cards = owned_cards_list
+
+	try:
+		coins = int(request.GET.get('coins', '0'))
+	except ValueError:
+		coins = 0
 
 	try:
 		page = int(request.GET.get("page", "1"))
@@ -408,9 +424,8 @@ def collection_view(request):
 	position = (request.GET.get("position") or "").strip()
 	search = (request.GET.get("search") or "").strip()
 
-	def contains_json_key_value(queryset, key, value):
-
-		return queryset.filter(card__data__icontains=f'"{key}": "{value}"')
+	def contains_json_key_value(items, key, value):
+		return [item for item in items if f'"{key}": "{value}"' in json.dumps(item['card'].data)]
 
 	if league:
 		user_cards = contains_json_key_value(user_cards, "League", league)
@@ -419,16 +434,12 @@ def collection_view(request):
 	if position:
 		user_cards = contains_json_key_value(user_cards, "Position", position)
 	if search:
-
-		user_cards = user_cards.filter(
-			models.Q(card__name__icontains=search) | 
-			models.Q(card__data__icontains=f'"Name": "{search}"')
-		)
+		user_cards = [item for item in user_cards if search.lower() in (item['card'].name or '').lower() or f'"Name": "{search}"' in json.dumps(item['card'].data)]
 
 	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
 
-	def overall_value(card: Card):
-		d = card.data or {}
+	def overall_value(item):
+		d = item['card'].data or {}
 		v = d.get("Overall") or d.get("Rating") or "0"
 		try:
 			return int(str(v))
@@ -436,18 +447,18 @@ def collection_view(request):
 			return 0
 
 	if sort in ("overall_desc", "overall_asc"):
-		user_cards = sorted(user_cards, key=lambda uc: overall_value(uc.card), reverse=(sort == "overall_desc"))
+		user_cards = sorted(user_cards, key=overall_value, reverse=(sort == "overall_desc"))
 	else:
-		user_cards = user_cards.order_by("card__external_id")
+		user_cards = sorted(user_cards, key=lambda item: item['card'].external_id)
 
 	paginator = Paginator(user_cards, per_page)
 	page_obj = paginator.get_page(page)
 
-	cards = [uc.card for uc in page_obj.object_list]
+	cards = page_obj.object_list
 	context = {
 		"cards": cards,
-		"columns": ["Name", "Overall", "Position", "Club", "Nation", "Actions"],
-		"profile": profile,
+		"columns": ["Name", "Overall", "Position", "Club", "Nation", "Quantity", "Actions"],
+		"coins": coins,
 		"position_groups": POSITIONS_GROUPS,
 		"page": page_obj.number,
 		"per_page": per_page,
@@ -475,24 +486,32 @@ def packs_view(request):
         Pack.objects.create(name='Silver Pack', price=100, num_cards=5, chances={'60-79': 0.6, '80-89': 0.4})
         Pack.objects.create(name='Gold Pack', price=500, num_cards=5, chances={'70-89': 0.7, '90-100': 0.3})
     packs = Pack.objects.all()
-    profile = get_profile()
+    try:
+        coins = int(request.GET.get('coins', '0'))
+    except ValueError:
+        coins = 0
     context = {
         "packs": packs,
-        "profile": profile,
+        "coins": coins,
     }
     return render(request, "core/packs.html", context)
 
 
 def open_pack(request, pack_id):
 	pack = get_object_or_404(Pack, id=pack_id)
-	profile = get_profile()
+	try:
+		coins = int(request.GET.get('coins', '0'))
+	except ValueError:
+		coins = 0
 
-	if profile.coins < pack.price:
+	if coins < pack.price:
 		messages.error(request, "Not enough coins!")
 		return redirect('packs')
 
-	profile.coins -= pack.price
-	profile.save()
+	coins -= pack.price
+
+	all_cards = list(Card.objects.filter(is_deleted=False))
+	new_cards = []
 
 	all_cards = list(Card.objects.filter(is_deleted=False))
 	new_cards = []
@@ -511,23 +530,19 @@ def open_pack(request, pack_id):
 				if possible_cards:
 					chosen = random.choice(possible_cards)
 					new_cards.append(chosen)
-					
-					user_card, created = UserCard.objects.get_or_create(profile=profile, card=chosen)
-					if not created:
-						user_card.quantity += 1
-						user_card.save()
 				break
 
 	messages.success(request, f"Opened pack! Got {len(new_cards)} cards.")
-	return render(request, "core/pack_result.html", {"new_cards": new_cards})
+	return render(request, "core/pack_result.html", {"new_cards": new_cards, "coins": coins})
 
 
 def quicksell(request, card_id):
-	profile = get_profile()
-	user_card = get_object_or_404(UserCard, profile=profile, card_id=card_id)
-	price = user_card.card.quicksell_price()
-	profile.coins += price
-	profile.save()
-	user_card.delete()
+	try:
+		coins = int(request.GET.get('coins', '0'))
+	except ValueError:
+		coins = 0
+	card = get_object_or_404(Card, external_id=card_id)
+	price = card.quicksell_price()
+	coins += price
 	messages.success(request, f"Sold for {price} coins!")
 	return redirect('collection')
