@@ -103,10 +103,9 @@ class Command(BaseCommand):
                             f"Composite ID columns missing in headers: {missing}; present headers: {fieldnames}"
                         )
                     )
-            # If neither id_col nor composite are valid, we'll fallback to row index
-            # Validate/auto-detect ID column
+
             if id_col and id_col not in fieldnames:
-                # Try common alternatives automatically
+
                 id_candidates = [id_col, "ID", "id", "sofifa_id", "player_id"]
                 detected = next((c for c in id_candidates if c in fieldnames), None)
                 if detected:
@@ -130,7 +129,7 @@ class Command(BaseCommand):
                 row_idx += 1
                 ext_id = str(row.get(id_col) or "").strip()
                 if not ext_id:
-                    # Try composite
+
                     if composite_cols:
                         parts = []
                         for c in composite_cols:
@@ -141,7 +140,7 @@ class Command(BaseCommand):
                             parts.append(f"{c}:{str(v).strip()}")
                         if parts:
                             ext_id = "|".join(parts)
-                    # Fallback to row index
+                            
                     if not ext_id:
                         ext_id = f"row:{row_idx}"
                 name_val = None

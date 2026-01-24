@@ -26,6 +26,8 @@ ENV DJANGO_SETTINGS_MODULE=auxion.settings \
 RUN useradd -m django && chown -R django:django /app
 USER django
 
-# Run migrations, optionally seed CSV, then runserver (binds to default localhost)
-ENV SEED_CSV=false
-CMD ["sh", "-c", "python manage.py migrate && if [ \"$SEED_CSV\" = \"true\" ]; then python manage.py import_playersdata --truncate; fi && python manage.py runserver"]
+EXPOSE 8000
+
+# Run migrations, collect static files, seed CSV if needed, then runserver (binds to all interfaces)
+# CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && # python manage.py import_playersdata && python manage.py runserver 0.0.0.0:8000"]
+CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && python manage.py runserver 0.0.0.0:8000"]
