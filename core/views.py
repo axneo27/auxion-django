@@ -395,6 +395,9 @@ def collection_view(request):
 	except json.JSONDecodeError:
 		owned_cards = {}
 	
+	# Update session with owned_cards
+	request.session['owned_cards'] = json.dumps(owned_cards)
+	
 	# owned_cards is dict {card_id: quantity}
 	owned_cards_list = []
 	for card_id, qty in owned_cards.items():
@@ -531,6 +534,26 @@ def open_pack(request, pack_id):
 					chosen = random.choice(possible_cards)
 					new_cards.append(chosen)
 				break
+
+	# Update session with new cards
+	owned_cards_data = request.session.get('owned_cards', '{}')
+	if isinstance(owned_cards_data, dict):
+		owned_cards = owned_cards_data
+		request.session['owned_cards'] = json.dumps(owned_cards)
+	else:
+		try:
+			owned_cards = json.loads(owned_cards_data)
+		except json.JSONDecodeError:
+			owned_cards = {}
+	
+	for card in new_cards:
+		external_id = card.external_id
+		if external_id in owned_cards:
+			owned_cards[external_id] += 1
+		else:
+			owned_cards[external_id] = 1
+	
+	request.session['owned_cards'] = json.dumps(owned_cards)
 
 	messages.success(request, f"Opened pack! Got {len(new_cards)} cards.")
 	return render(request, "core/pack_result.html", {"new_cards": new_cards, "coins": coins})
