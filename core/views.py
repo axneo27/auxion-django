@@ -51,7 +51,9 @@ def list_view(request):
 		if 'login' in request.POST:
 			username = request.POST.get('username')
 			password = request.POST.get('password')
-			if username == os.getenv('ADMIN_USERNAME') and password == os.getenv('ADMIN_PASSWORD'):
+			expected_username = os.environ.get('ADMIN_USERNAME', 'admin')
+			expected_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+			if username == expected_username and password == expected_password:
 				request.session['admin_logged_in'] = True
 				return redirect('card_list')
 			else:
