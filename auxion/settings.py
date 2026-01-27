@@ -34,6 +34,10 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://auxion-django-bqh8hxa0gjhra8aa.germanywestcentral-01.azurewebsites.net',
+]
+
 
 # Application definition
 
