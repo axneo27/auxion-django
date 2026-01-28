@@ -66,9 +66,9 @@ def list_view(request):
 
 	try:
 		page = int(request.GET.get("page", "1"))
-		per_page = int(request.GET.get("per_page", "50"))
+		per_page = int(request.GET.get("per_page", "20"))
 	except ValueError:
-		page, per_page = 1, 50
+		page, per_page = 1, 20
 	page = max(page, 1)
 	per_page = max(min(per_page, 200), 1)
 
