@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.contrib import messages
+from django.contrib.auth import authenticate
 from django.db import models
 from django.core.files.storage import default_storage
 import random
@@ -51,9 +52,8 @@ def list_view(request):
 		if 'login' in request.POST:
 			username = request.POST.get('username')
 			password = request.POST.get('password')
-			expected_username = os.environ.get('ADMIN_USERNAME', 'admin')
-			expected_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
-			if username == expected_username and password == expected_password:
+			user = authenticate(request, username=username, password=password)
+			if user and user.is_staff:
 				request.session['admin_logged_in'] = True
 				return redirect('card_list')
 			else:
