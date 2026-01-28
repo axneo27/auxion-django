@@ -4,3 +4,4 @@ sqlparse>=0.3
 python-dotenv
 django-storages[azure]
 azure-storage-blob
+psycopg2-binary

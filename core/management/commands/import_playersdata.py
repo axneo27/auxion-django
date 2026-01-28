@@ -77,16 +77,21 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f"CSV not found: {path}"))
             return
 
-        if not truncate and Card.objects.exists():
-            self.stdout.write(self.style.WARNING("Database already seeded. Use --truncate to re-seed."))
-            return
-
         if truncate:
             Card.objects.all().delete()
             self.stdout.write(self.style.WARNING("Existing Card rows deleted."))
 
         created = 0
         updated = 0
+        batch_size = 500
+        cards_to_create = []
+
+        # Load existing external_ids into a set for fast lookup
+        existing_ids = set(Card.objects.values_list('external_id', flat=True))
+
+        # Start processing from this external_id
+        start_from_id = "15999"
+        skip_until_start = True
 
         with open(path, mode="r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
@@ -143,6 +148,13 @@ class Command(BaseCommand):
                             
                     if not ext_id:
                         ext_id = f"row:{row_idx}"
+
+                if skip_until_start:
+                    if ext_id == start_from_id:
+                        skip_until_start = False
+                    else:
+                        continue
+
                 name_val = None
                 if name_col:
                     v = row.get(name_col)
@@ -154,17 +166,22 @@ class Command(BaseCommand):
                     key = RENAMES.get(str(k), str(k))
                     data_out[key] = "" if v is None else str(v)
 
-                obj, is_created = Card.objects.update_or_create(
-                    external_id=ext_id,
-                    defaults={
-                        "name": name_val,
-                        "data": data_out,
-                    },
-                )
-                if is_created:
-                    created += 1
+                # Check if card exists
+                if ext_id not in existing_ids:
+                    # Collect for bulk create
+                    cards_to_create.append(Card(external_id=ext_id, name=name_val, data=data_out))
+                    if len(cards_to_create) >= batch_size:
+                        Card.objects.bulk_create(cards_to_create)
+                        created += len(cards_to_create)
+                        cards_to_create = []
                 else:
-                    updated += 1
+                    # Skip existing
+                    pass
+
+            # Final batch
+            if cards_to_create:
+                Card.objects.bulk_create(cards_to_create)
+                created += len(cards_to_create)
 
         self.stdout.write(
             self.style.SUCCESS(
