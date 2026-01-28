@@ -15,8 +15,9 @@ ENV/
 local_settings.py
 
 # SQLite (default dev DB)
-# db.sqlite3
-# db.sqlite3-journal
+# Database
+db.sqlite3
+db.sqlite3-journal
 
 # Static & media (generated at runtime)
 staticfiles/
