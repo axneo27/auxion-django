@@ -21,6 +21,13 @@ from .firebase import (
 	adjust_coins,
 	add_cards,
 	decrement_card,
+	create_auction,
+	list_active_auctions,
+	list_user_auctions,
+	place_bid,
+	buy_now_purchase,
+	cancel_auction,
+	finalize_auction,
 )
 
 logger = logging.getLogger(__name__)
@@ -618,3 +625,136 @@ def quicksell(request, card_id):
 	adjust_coins(uid, int(price))
 	messages.success(request, f"Sold for {price} coins!")
 	return redirect('collection')
+
+
+# === Transfers / Auctions ===
+
+def _require_login(request):
+	if not request.session.get('user_logged_in') or not request.session.get('firebase_user'):
+		messages.error(request, 'Please log in first.')
+		return False
+	return True
+
+
+def transfers_view(request):
+	if not _require_login(request):
+		return redirect('card_list')
+	# Opportunistically finalize expired auctions during listing
+	uid = request.session['firebase_user'].get('uid')
+	coins = get_user_coins(uid)
+	auctions = list_active_auctions()
+	# Hide user's own auctions from the public transfers page
+	auctions = [a for a in auctions if str(a.get('seller_uid')) != str(uid)]
+
+	# Pagination (6 per page)
+	try:
+		page = int(request.GET.get('page', '1'))
+	except ValueError:
+		page = 1
+	paginator = Paginator(auctions, 6)
+	page_obj = paginator.get_page(page)
+
+	# Attach card objects for current page
+	page_auctions = list(page_obj.object_list)
+	card_ids = [str(a.get('card_id')) for a in page_auctions if a.get('card_id')]
+	cards_map = {c.external_id: c for c in Card.objects.filter(external_id__in=card_ids, is_deleted=False)}
+	for a in page_auctions:
+		a['card'] = cards_map.get(str(a.get('card_id')))
+	return render(request, 'core/transfers.html', {
+		'auctions': page_auctions,
+		'coins': coins,
+		'page_obj': page_obj,
+	})
+
+
+def my_transfers_view(request):
+	if not _require_login(request):
+		return redirect('card_list')
+	uid = request.session['firebase_user'].get('uid')
+	coins = get_user_coins(uid)
+	auctions = list_user_auctions(uid)
+	# Also provide user's owned cards for creating new auctions
+	owned_cards = get_user_cards(uid)
+	owned_card_ids = [cid for cid, qty in owned_cards.items() if qty > 0]
+	cards_qs = Card.objects.filter(external_id__in=owned_card_ids, is_deleted=False).order_by('name')
+
+	# Pagination (6 per page)
+	try:
+		page = int(request.GET.get('page', '1'))
+	except ValueError:
+		page = 1
+	paginator = Paginator(auctions, 6)
+	page_obj = paginator.get_page(page)
+	page_auctions = list(page_obj.object_list)
+	card_ids = [str(a.get('card_id')) for a in page_auctions if a.get('card_id')]
+	cards_map = {c.external_id: c for c in Card.objects.filter(external_id__in=card_ids, is_deleted=False)}
+	for a in page_auctions:
+		a['card'] = cards_map.get(str(a.get('card_id')))
+	return render(request, 'core/my_transfers.html', {
+		'auctions': page_auctions,
+		'cards': cards_qs,
+		'coins': coins,
+		'page_obj': page_obj,
+	})
+
+
+def create_auction_view(request):
+	if not _require_login(request):
+		return redirect('card_list')
+	if request.method != 'POST':
+		return redirect('my_transfers')
+	uid = request.session['firebase_user'].get('uid')
+	card_id = (request.POST.get('card_id') or '').strip()
+	start_price = int(request.POST.get('start_price') or '0')
+	buy_now_price_raw = request.POST.get('buy_now_price')
+	buy_now_price = int(buy_now_price_raw) if (buy_now_price_raw and buy_now_price_raw.isdigit()) else None
+	duration_minutes = int(request.POST.get('duration_minutes') or '60')
+	try:
+		auction = create_auction(uid, card_id, start_price, buy_now_price, duration_minutes * 60)
+		messages.success(request, 'Auction created.')
+	except Exception as e:
+		messages.error(request, f'Failed to create auction: {e}')
+	return redirect('my_transfers')
+
+
+def place_bid_view(request, auction_id: str):
+	if not _require_login(request):
+		return redirect('card_list')
+	if request.method != 'POST':
+		return redirect('transfers')
+	uid = request.session['firebase_user'].get('uid')
+	bid_amount = int(request.POST.get('bid_amount') or '0')
+	try:
+		place_bid(uid, auction_id, bid_amount)
+		messages.success(request, 'Bid placed.')
+	except Exception as e:
+		messages.error(request, f'Failed to bid: {e}')
+	return redirect('transfers')
+
+
+def buy_now_view(request, auction_id: str):
+	if not _require_login(request):
+		return redirect('card_list')
+	if request.method != 'POST':
+		return redirect('transfers')
+	uid = request.session['firebase_user'].get('uid')
+	try:
+		buy_now_purchase(uid, auction_id)
+		messages.success(request, 'Purchased via Buy Now.')
+	except Exception as e:
+		messages.error(request, f'Failed to buy now: {e}')
+	return redirect('transfers')
+
+
+def cancel_auction_view(request, auction_id: str):
+	if not _require_login(request):
+		return redirect('card_list')
+	if request.method != 'POST':
+		return redirect('my_transfers')
+	uid = request.session['firebase_user'].get('uid')
+	try:
+		cancel_auction(uid, auction_id)
+		messages.success(request, 'Auction cancelled.')
+	except Exception as e:
+		messages.error(request, f'Failed to cancel: {e}')
+	return redirect('my_transfers')

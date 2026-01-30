@@ -25,6 +25,14 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/packs/">Packs</a>
                     </li>
+                    {% if request.session.user_logged_in %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/transfers/">Transfers</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/transfers/my/">My Transfers</a>
+                    </li>
+                    {% endif %}
                 </ul>
                 <div class="d-flex align-items-center gap-2 ms-auto">
                     {% if request.session.user_logged_in or request.session.admin_logged_in %}
@@ -71,6 +79,8 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
+        // Force account chooser to allow switching accounts cleanly
+        try { provider.setCustomParameters({ prompt: 'select_account' }); } catch (e) { /* ignore */ }
         console.log('[Auth] Firebase initialized', { projectId: firebaseConfig.projectId });
         // Optional: use device language for Google OAuth
         try { auth.useDeviceLanguage(); } catch (e) { /* ignore */ }
@@ -157,6 +167,9 @@
                 console.log('[Auth] Logout button clicked');
                 try {
                     await signOut(auth);
+                    // Clear any client-side cached state to fully reset context
+                    try { localStorage.clear(); } catch (e) {}
+                    try { sessionStorage.clear(); } catch (e) {}
                     const resp = await postJson('/auth/logout/', {});
                     console.log('[Auth] Logout backend response', { status: resp.status });
                     if (resp.ok) {

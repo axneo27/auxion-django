@@ -1,0 +1,121 @@
+{% extends "core/layout.html" %}
+
+{% block title %}Transfers{% endblock %}
+
+{% block extra_head %}
+<style>
+  .player-thumb { height: 50px; width: 50px; object-fit: cover; border-radius: 4px; }
+  .name-cell { display: flex; align-items: center; gap: 8px; }
+  table.table td, table.table th { vertical-align: middle; }
+  .bid-input { width: 120px; display: inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Transfers</h1>
+<p>Coins: <span id="coins">{{ coins }}</span></p>
+<p>Active auctions:</p>
+<table class="table">
+  <thead>
+    <tr>
+      <th>Card</th>
+      <th>Start</th>
+      <th>Current Bid</th>
+      <th>Buy Now</th>
+      <th>Time Left</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in auctions %}
+    <tr>
+      <td class="name-cell">
+        {% if a.card and a.card.player_pic %}
+          <img src="{{ a.card.player_pic }}" alt="" class="player-thumb" />
+        {% endif %}
+        {% if a.card %}
+          <a href="/{{ a.card.external_id }}/">{{ a.card.name }} ({{ a.card.rating }})</a>
+        {% else %}
+          <a href="/{{ a.card_id }}/">{{ a.card_id }}</a>
+        {% endif %}
+      </td>
+      <td>{{ a.start_price }}</td>
+      <td>{% if a.current_bid %}{{ a.current_bid }}{% else %}-{% endif %}</td>
+      <td>{% if a.buy_now_price %}{{ a.buy_now_price }}{% else %}-{% endif %}</td>
+      <td>
+        <span class="time-left" id="time-left-{{ a.id }}" data-end-time="{{ a.end_time }}">--:--</span>
+      </td>
+      <td>
+        <form method="post" action="{% url 'place_bid' a.id %}" style="display:inline">
+          {% csrf_token %}
+          <input type="number" name="bid_amount" min="1" placeholder="Your bid" class="form-control form-control-sm bid-input" />
+          <button class="btn btn-sm btn-primary" type="submit">Bid</button>
+        </form>
+        {% if a.buy_now_price %}
+        <form method="post" action="{% url 'buy_now' a.id %}" style="display:inline">
+          {% csrf_token %}
+          <button class="btn btn-sm btn-success" type="submit">Buy Now</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6">No active auctions.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if page_obj and page_obj.has_other_pages %}
+{% load core_extras %}
+<nav aria-label="Transfers pagination">
+  <ul class="pagination justify-content-center">
+    {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?{% url_replace page=page_obj.previous_page_number %}">Previous</a>
+      </li>
+    {% endif %}
+
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+        <li class="page-item active" aria-current="page">
+          <span class="page-link">{{ num }}</span>
+        </li>
+      {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <li class="page-item">
+          <a class="page-link" href="?{% url_replace page=num %}">{{ num }}</a>
+        </li>
+      {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?{% url_replace page=page_obj.next_page_number %}">Next</a>
+      </li>
+    {% endif %}
+  </ul>
+  </nav>
+{% endif %}
+
+<script>
+  (function(){
+    function fmt(ms) {
+      if (ms <= 0) return 'Expired';
+      const totalSec = Math.floor(ms / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      return `${min}:${sec.toString().padStart(2,'0')}`;
+    }
+    function tick() {
+      const now = Date.now();
+      document.querySelectorAll('.time-left').forEach(el => {
+        const endIso = el.getAttribute('data-end-time') || '';
+        const endMs = Date.parse(endIso);
+        if (isNaN(endMs)) { el.textContent = '--:--'; return; }
+        el.textContent = fmt(endMs - now);
+      });
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+  </script>
+{% endblock %}
