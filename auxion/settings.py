@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'sslserver',
     'storages',
     'core',
 ]
@@ -58,6 +59,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.middleware.COOPSameOriginAllowPopupsMiddleware',
 ]
 
 ROOT_URLCONF = 'auxion.urls'
@@ -216,3 +218,9 @@ else:
     except FileNotFoundError:
         # Firebase not configured, skip initialization
         pass
+
+# =========================
+# Admin email whitelist
+# =========================
+
+ADMIN_EMAILS = [e.strip() for e in os.environ.get('ADMIN_EMAILS', '').split(',') if e.strip()]

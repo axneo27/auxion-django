@@ -90,18 +90,7 @@ body {
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    let ownedCards = JSON.parse(localStorage.getItem('ownedCards') || '{}');
-    {% for card in new_cards %}
-    if (ownedCards['{{ card.external_id }}']) {
-        ownedCards['{{ card.external_id }}'] += 1;
-    } else {
-        ownedCards['{{ card.external_id }}'] = 1;
-    }
-    {% endfor %}
-    localStorage.setItem('ownedCards', JSON.stringify(ownedCards));
-    localStorage.setItem('coins', '{{ coins }}');
-});
+// Server already updated Firestore inventory; no localStorage used.
 </script>
 
 {% endblock %}

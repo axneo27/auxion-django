@@ -10,6 +10,8 @@ urlpatterns = [
     path('deleted/', views.deleted_cards_view, name='deleted_cards'),
     path('create/', views.create_card_view, name='create_card'),
     path('edit/<int:card_id>/', views.edit_card_view, name='edit_card'),
+    path('auth/google/', views.google_login, name='google_login'),
+    path('auth/logout/', views.google_logout, name='google_logout'),
     path('', views.list_view, name='card_list'),
     path('<str:item_id>/', views.detail_view, name='card_detail'),
 ]

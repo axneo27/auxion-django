@@ -20,8 +20,6 @@
 </div>
 
 <form method="get" class="filters mb-3">
-    <input type="hidden" name="owned_cards" id="owned_cards_input" />
-    <input type="hidden" name="coins" id="coins_input" />
     <div class="row g-3 align-items-end">
         <div class="col-12 col-sm-6 col-md-4">
             <label class="form-label">Search by Name</label>
@@ -159,41 +157,11 @@
 {% endif %}
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const ownedCards = localStorage.getItem('ownedCards') || '{}';
-    document.getElementById('owned_cards_input').value = ownedCards;
-    const coins = localStorage.getItem('coins') || '0';
-    document.getElementById('coins_input').value = coins;
-    document.getElementById('coins').textContent = coins;
-
-    // If no owned_cards in URL, submit the form to load with data
-    const urlParams = new URLSearchParams(window.location.search);
-    if (!urlParams.has('owned_cards') && ownedCards !== '{}') {
-        document.querySelector('.filters').submit();
-    }
-});
-
 function confirmSell(element) {
     const cardId = element.dataset.cardId;
     const price = parseInt(element.dataset.price);
     if (confirm('Sell for ' + price + ' coins?')) {
-        // Remove from localStorage
-        let ownedCards = JSON.parse(localStorage.getItem('ownedCards') || '{}');
-        if (ownedCards[cardId]) {
-            ownedCards[cardId] -= 1;
-            if (ownedCards[cardId] <= 0) {
-                delete ownedCards[cardId];
-            }
-        }
-        localStorage.setItem('ownedCards', JSON.stringify(ownedCards));
-        // Add coins
-        let coins = parseInt(localStorage.getItem('coins') || '0');
-        coins += price;
-        localStorage.setItem('coins', coins.toString());
-        document.getElementById('coins').textContent = coins;
-        // Update the form and submit to refresh the list
-        document.getElementById('owned_cards_input').value = JSON.stringify(ownedCards);
-        document.querySelector('.filters').submit();
+        window.location.href = '/quicksell/' + encodeURIComponent(cardId) + '/';
     }
 }
 </script>

@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Auxion{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
@@ -27,9 +26,20 @@
                         <a class="nav-link" href="/packs/">Packs</a>
                     </li>
                 </ul>
-                {% if profile %}
-                    <span class="navbar-text me-3">Coins: {{ profile.coins }}</span>
-                {% endif %}
+                <div class="d-flex align-items-center gap-2 ms-auto">
+                    {% if request.session.user_logged_in or request.session.admin_logged_in %}
+                        {% if request.session.firebase_user and request.session.firebase_user.picture %}
+                            <img src="{{ request.session.firebase_user.picture }}" alt="avatar" class="rounded-circle" width="28" height="28">
+                        {% endif %}
+                        <span class="text-light small">
+                            {{ request.session.firebase_user.name|default:request.session.firebase_user.email|default:"Signed in" }}
+                            {% if request.session.admin_logged_in %}<span class="badge bg-warning text-dark ms-1">admin</span>{% endif %}
+                        </span>
+                        <button id="googleLogoutBtn" class="btn btn-outline-light btn-sm">Sign out</button>
+                    {% else %}
+                        <button id="googleLoginBtn" class="btn btn-primary btn-sm">Sign in with Google</button>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </nav>
@@ -43,5 +53,123 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     {% include "components/toastify.html" %}
     {% block extra_scripts %}{% endblock %}
+
+    <script type="module">
+        // Firebase v10 modular SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyBb1-fkHQisLbgE808ggHbVw92wLNRUE9o",
+          authDomain: "auxiondjango.firebaseapp.com",
+          projectId: "auxiondjango",
+          storageBucket: "auxiondjango.firebasestorage.app",
+          messagingSenderId: "288787287393",
+          appId: "1:288787287393:web:6a7669a1a4a51b53b1c920"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+        console.log('[Auth] Firebase initialized', { projectId: firebaseConfig.projectId });
+        // Optional: use device language for Google OAuth
+        try { auth.useDeviceLanguage(); } catch (e) { /* ignore */ }
+
+        async function handleAuthResult(result) {
+            if (!result || !result.user) return;
+            console.log('[Auth] Handle auth result', { uid: result.user.uid, email: result.user.email });
+            try {
+                const idToken = await result.user.getIdToken();
+                console.log('[Auth] Obtained ID token (redirect/popup)', { length: idToken?.length });
+                const resp = await postJson('/auth/google/', { id_token: idToken });
+                console.log('[Auth] Backend response', { status: resp.status });
+                if (resp.ok) {
+                    location.reload();
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    console.error('[Auth] Backend error', err);
+                    toastr.error(err.error || 'Login failed');
+                }
+            } catch (e) {
+                console.error('[Auth] Posting token failed', e);
+                toastr.error(e.message || 'Login failed');
+            }
+        }
+
+        // If a previous signInWithRedirect completed, process the result
+        try {
+            getRedirectResult(auth).then(handleAuthResult).catch(e => {
+                console.error('[Auth] getRedirectResult error', e);
+            });
+        } catch (e) {
+            console.error('[Auth] getRedirectResult threw', e);
+        }
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+
+        async function postJson(url, data) {
+            const csrftoken = getCookie('csrftoken');
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrftoken || ''
+                },
+                body: new URLSearchParams(data)
+            });
+            return res;
+        }
+
+        const loginBtn = document.getElementById('googleLoginBtn');
+        if (loginBtn) {
+            loginBtn.addEventListener('click', async () => {
+                console.log('[Auth] Login button clicked');
+                try {
+                    const result = await signInWithPopup(auth, provider);
+                    console.log('[Auth] Google sign-in result', { uid: result?.user?.uid, email: result?.user?.email });
+                    await handleAuthResult(result);
+                } catch (e) {
+                    console.error('[Auth] Google sign-in error', e);
+                    // Fallback to redirect for popup errors
+                    const code = e?.code || '';
+                    if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+                        console.warn('[Auth] Falling back to redirect due to', code);
+                        try {
+                            await signInWithRedirect(auth, provider);
+                        } catch (e2) {
+                            console.error('[Auth] signInWithRedirect failed', e2);
+                            toastr.error(e2.message || 'Google sign-in error');
+                        }
+                    } else {
+                        toastr.error(e.message || 'Google sign-in error');
+                    }
+                }
+            });
+        }
+
+        const logoutBtn = document.getElementById('googleLogoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async () => {
+                console.log('[Auth] Logout button clicked');
+                try {
+                    await signOut(auth);
+                    const resp = await postJson('/auth/logout/', {});
+                    console.log('[Auth] Logout backend response', { status: resp.status });
+                    if (resp.ok) {
+                        location.reload();
+                    } else {
+                        toastr.error('Logout failed');
+                    }
+                } catch (e) {
+                    console.error('[Auth] Logout error', e);
+                    toastr.error(e.message || 'Logout error');
+                }
+            });
+        }
+    </script>
 </body>
 </html>

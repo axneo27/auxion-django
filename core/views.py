@@ -1,9 +1,10 @@
-from django.http import Http404
+from django.http import Http404, JsonResponse
+import logging
 from django.shortcuts import render, redirect, get_object_or_404
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.contrib import messages
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.db import models
 from django.core.files.storage import default_storage
 import random
@@ -12,6 +13,18 @@ import uuid
 import json
 
 from .models import Card, Pack
+from firebase_admin import auth as firebase_auth
+from .firebase import (
+	get_inventory,
+	get_user_cards,
+	get_user_coins,
+	adjust_coins,
+	add_cards,
+	decrement_card,
+)
+
+logger = logging.getLogger(__name__)
+UserModel = get_user_model()
 
 
 def is_admin_logged_in(request):
@@ -48,6 +61,7 @@ POSITIONS_GROUPS = [
 ]
 
 def list_view(request):
+	logger.debug("list_view: admin_logged_in=%s method=%s", request.session.get('admin_logged_in'), request.method)
 	if request.method == 'POST':
 		if 'login' in request.POST:
 			username = request.POST.get('username')
@@ -55,11 +69,14 @@ def list_view(request):
 			user = authenticate(request, username=username, password=password)
 			if user and user.is_staff:
 				request.session['admin_logged_in'] = True
+				logger.info("Admin login via username successful: %s", username)
 				return redirect('card_list')
 			else:
+				logger.warning("Admin login failed for username: %s", username)
 				messages.error(request, 'Invalid credentials')
 		elif 'logout' in request.POST:
 			request.session.pop('admin_logged_in', None)
+			logger.info("Admin logout via form")
 			return redirect('card_list')
 
 	admin_logged_in = is_admin_logged_in(request)
@@ -125,6 +142,66 @@ def list_view(request):
 		"admin_logged_in": admin_logged_in,
 	}
 	return render(request, "core/list.html", context)
+
+
+def google_login(request):
+	if request.method != 'POST':
+		logger.warning("google_login: invalid method %s", request.method)
+		return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+	id_token = request.POST.get('id_token') or (request.headers.get('Authorization', '').replace('Bearer ', '') if request.headers.get('Authorization') else None)
+	if not id_token:
+		logger.warning("google_login: missing id_token; headers=%s", {k: request.headers.get(k) for k in ['Authorization']})
+		return JsonResponse({'error': 'Missing id_token'}, status=400)
+
+	try:
+		decoded = firebase_auth.verify_id_token(id_token)
+		logger.info("google_login: token verified; uid=%s email=%s", decoded.get('uid'), decoded.get('email'))
+		# Extract basic profile info
+		firebase_user = {
+			'uid': decoded.get('uid'),
+			'email': decoded.get('email'),
+			'name': decoded.get('name'),
+			'picture': decoded.get('picture'),
+		}
+		# Mark user logged in, but only set admin if allowed
+		request.session['user_logged_in'] = True
+		request.session['firebase_user'] = firebase_user
+		admin_allowed = False
+		email = firebase_user.get('email')
+		try:
+			if email and email in getattr(settings, 'ADMIN_EMAILS', []):
+				admin_allowed = True
+			elif email:
+				user = UserModel.objects.filter(email__iexact=email).first()
+				if user and (user.is_staff or user.is_superuser):
+					admin_allowed = True
+		except Exception:
+			pass
+
+		if admin_allowed:
+			request.session['admin_logged_in'] = True
+			logger.info("google_login: admin granted for email=%s", email)
+		else:
+			request.session.pop('admin_logged_in', None)
+			logger.info("google_login: regular user login for email=%s", email)
+
+		logger.debug("google_login: session set user_logged_in=True firebase_user=%s", {k: firebase_user.get(k) for k in ['uid','email','name']})
+		return JsonResponse({'status': 'ok', 'user': firebase_user})
+	except Exception as e:
+		logger.exception("google_login: token verification failed: %s", e)
+		return JsonResponse({'error': 'Invalid token', 'detail': str(e)}, status=401)
+
+
+def google_logout(request):
+	if request.method != 'POST':
+		logger.warning("google_logout: invalid method %s", request.method)
+		return JsonResponse({'error': 'Method not allowed'}, status=405)
+	request.session.pop('admin_logged_in', None)
+	request.session.pop('firebase_user', None)
+	request.session.pop('user_logged_in', None)
+	logger.info("google_logout: session cleared")
+	return JsonResponse({'status': 'ok'})
 
 
 def deleted_cards_view(request):
@@ -378,25 +455,18 @@ def detail_view(request, item_id: str):
 
 
 def collection_view(request):
-	owned_cards_str = request.GET.get('owned_cards', '{}')
-	try:
-		owned_cards = json.loads(owned_cards_str)
-	except json.JSONDecodeError:
-		owned_cards = {}
-	
-	# Update session with owned_cards
-	request.session['owned_cards'] = json.dumps(owned_cards)
-	
-	# Get owned card IDs with quantity > 0
-	owned_card_ids = [card_id for card_id, qty in owned_cards.items() if qty > 0]
-	
-	# Start with queryset of owned cards
-	cards_qs = Card.objects.filter(external_id__in=owned_card_ids, is_deleted=False)
+	# Require login
+	if not request.session.get('user_logged_in') or not request.session.get('firebase_user'):
+		messages.error(request, 'Please log in to view your collection.')
+		return redirect('card_list')
 
-	try:
-		coins = int(request.GET.get('coins', '0'))
-	except ValueError:
-		coins = 0
+	uid = request.session['firebase_user'].get('uid')
+	inv = get_inventory(uid)
+	owned_cards = get_user_cards(uid)
+	coins = int(inv.get('coins', 0))
+
+	owned_card_ids = [card_id for card_id, qty in owned_cards.items() if qty > 0]
+	cards_qs = Card.objects.filter(external_id__in=owned_card_ids, is_deleted=False)
 
 	try:
 		page = int(request.GET.get("page", "1"))
@@ -464,34 +534,40 @@ def collection_view(request):
 
 
 def packs_view(request):
-    if not Pack.objects.exists():
-        Pack.objects.create(name='Bronze Pack', price=0, num_cards=5, chances={'0-59': 0.7, '60-79': 0.3})
-        Pack.objects.create(name='Silver Pack', price=100, num_cards=5, chances={'60-79': 0.6, '80-89': 0.4})
-        Pack.objects.create(name='Gold Pack', price=500, num_cards=5, chances={'70-89': 0.7, '90-100': 0.3})
-    packs = Pack.objects.all()
-    try:
-        coins = int(request.GET.get('coins', '0'))
-    except ValueError:
-        coins = 0
-    context = {
-        "packs": packs,
-        "coins": coins,
-    }
-    return render(request, "core/packs.html", context)
+	# Require login
+	if not request.session.get('user_logged_in') or not request.session.get('firebase_user'):
+		messages.error(request, 'Please log in to open packs.')
+		return redirect('card_list')
+
+	if not Pack.objects.exists():
+		Pack.objects.create(name='Bronze Pack', price=0, num_cards=5, chances={'0-59': 0.7, '60-79': 0.3})
+		Pack.objects.create(name='Silver Pack', price=100, num_cards=5, chances={'60-79': 0.6, '80-89': 0.4})
+		Pack.objects.create(name='Gold Pack', price=500, num_cards=5, chances={'70-89': 0.7, '90-100': 0.3})
+	packs = Pack.objects.all()
+	uid = request.session['firebase_user'].get('uid')
+	coins = get_user_coins(uid)
+	context = {
+		"packs": packs,
+		"coins": coins,
+	}
+	return render(request, "core/packs.html", context)
 
 
 def open_pack(request, pack_id):
-	pack = get_object_or_404(Pack, id=pack_id)
-	try:
-		coins = int(request.GET.get('coins', '0'))
-	except ValueError:
-		coins = 0
+	# Require login
+	if not request.session.get('user_logged_in') or not request.session.get('firebase_user'):
+		messages.error(request, 'Please log in to open packs.')
+		return redirect('card_list')
 
+	pack = get_object_or_404(Pack, id=pack_id)
+	uid = request.session['firebase_user'].get('uid')
+	coins = get_user_coins(uid)
 	if coins < pack.price:
 		messages.error(request, "Not enough coins!")
 		return redirect('packs')
 
-	coins -= pack.price
+	# Charge coins
+	adjust_coins(uid, -int(pack.price))
 
 	all_cards = list(Card.objects.filter(is_deleted=False))
 	new_cards = []
@@ -515,37 +591,30 @@ def open_pack(request, pack_id):
 					new_cards.append(chosen)
 				break
 
-	# Update session with new cards
-	owned_cards_data = request.session.get('owned_cards', '{}')
-	if isinstance(owned_cards_data, dict):
-		owned_cards = owned_cards_data
-		request.session['owned_cards'] = json.dumps(owned_cards)
-	else:
-		try:
-			owned_cards = json.loads(owned_cards_data)
-		except json.JSONDecodeError:
-			owned_cards = {}
-	
+	# Persist to Firestore: increment card quantities
+	incs = {}
 	for card in new_cards:
-		external_id = card.external_id
-		if external_id in owned_cards:
-			owned_cards[external_id] += 1
-		else:
-			owned_cards[external_id] = 1
-	
-	request.session['owned_cards'] = json.dumps(owned_cards)
+		incs[card.external_id] = incs.get(card.external_id, 0) + 1
+	add_cards(uid, incs)
+	coins = get_user_coins(uid)
 
 	messages.success(request, f"Opened pack! Got {len(new_cards)} cards.")
 	return render(request, "core/pack_result.html", {"new_cards": new_cards, "coins": coins})
 
-
 def quicksell(request, card_id):
-	try:
-		coins = int(request.GET.get('coins', '0'))
-	except ValueError:
-		coins = 0
+	# Require login
+	if not request.session.get('user_logged_in') or not request.session.get('firebase_user'):
+		messages.error(request, 'Please log in to quicksell players.')
+		return redirect('card_list')
+
+	uid = request.session['firebase_user'].get('uid')
 	card = get_object_or_404(Card, external_id=card_id)
 	price = card.quicksell_price()
-	coins += price
+	# Decrement one copy if available
+	cards_after, ok = decrement_card(uid, card.external_id)
+	if not ok:
+		messages.error(request, "You don't own this card.")
+		return redirect('collection')
+	adjust_coins(uid, int(price))
 	messages.success(request, f"Sold for {price} coins!")
 	return redirect('collection')
