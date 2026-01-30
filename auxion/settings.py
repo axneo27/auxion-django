@@ -46,10 +46,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'sslserver',
     'storages',
     'core',
 ]
+
+# Load dev-only apps conditionally
+if DEBUG:
+    try:
+        __import__('sslserver')
+        INSTALLED_APPS.append('sslserver')
+    except Exception:
+        # sslserver not installed in this environment; skip silently
+        pass
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
