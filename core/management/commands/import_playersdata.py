@@ -7,30 +7,6 @@ from django.conf import settings
 
 from core.models import Card
 
-RENAMES = {
-    "Name": "Name",
-    "Rating": "Overall",
-    "Position": "Position",
-    "Club": "Club",
-    "League": "League",
-    "Country": "Nation",
-    "Pace": "Pace",
-    "Shooting": "Shooting",
-    "Passing": "Passing",
-    "Dribbling": "Dribbling",
-    "Defending": "Defending",
-    "Phyiscality": "Physical", 
-    "SkillsMoves": "Skill Moves",
-    "WeakFoot": "Weak Foot",
-    "BaseStats": "Base Stats",
-    "InGameStats": "In-Game Stats",
-    "WorkRate": "Work Rate",
-    "Height": "Height",
-    "Revision": "Revision",
-    "Popularity": "Popularity",
-    "Price": "Price",
-}
-
 
 class Command(BaseCommand):
     help = "Import players CSV data into Card model"
@@ -83,7 +59,7 @@ class Command(BaseCommand):
 
         created = 0
         updated = 0
-        batch_size = 500
+        batch_size = 1000
         cards_to_create = []
 
         # Load existing external_ids into a set for fast lookup
@@ -91,7 +67,7 @@ class Command(BaseCommand):
 
         # Start processing from this external_id
         start_from_id = "15999"
-        skip_until_start = True
+        skip_until_start = False
 
         with open(path, mode="r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
@@ -161,15 +137,51 @@ class Command(BaseCommand):
                     if v is not None:
                         name_val = str(v)
 
-                data_out = {}
-                for k, v in row.items():
-                    key = RENAMES.get(str(k), str(k))
-                    data_out[key] = "" if v is None else str(v)
+                # Map CSV fields to model fields
+                card_kwargs = {
+                    'external_id': ext_id,
+                    'name': name_val,
+                }
+                field_mappings = {
+                    'Rating': 'rating',
+                    'Price': 'price',
+                    'SkillsMoves': 'skills_moves',
+                    'WeakFoot': 'weak_foot',
+                    'Pace': 'pace',
+                    'Shooting': 'shooting',
+                    'Passing': 'passing',
+                    'Dribbling': 'dribbling',
+                    'Defending': 'defending',
+                    'Phyiscality': 'physical',
+                    'Popularity': 'popularity',
+                    'BaseStats': 'base_stats',
+                    'InGameStats': 'in_game_stats',
+                    'Revision': 'revision',
+                    'Position': 'position',
+                    'WorkRate': 'work_rate',
+                    'Height': 'height',
+                    'Club': 'club',
+                    'Country': 'country',
+                    'League': 'league',
+                    'NationPic': 'nation_pic',
+                    'ClubPic': 'club_pic',
+                    'PlayerPic': 'player_pic',
+                }
+                for csv_key, model_field in field_mappings.items():
+                    if csv_key in row and row[csv_key]:
+                        value = str(row[csv_key]).strip()
+                        if model_field in ['rating', 'skills_moves', 'weak_foot', 'pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical', 'popularity', 'base_stats', 'in_game_stats']:
+                            try:
+                                card_kwargs[model_field] = int(value)
+                            except ValueError:
+                                card_kwargs[model_field] = None
+                        else:
+                            card_kwargs[model_field] = value if value else None
 
                 # Check if card exists
                 if ext_id not in existing_ids:
                     # Collect for bulk create
-                    cards_to_create.append(Card(external_id=ext_id, name=name_val, data=data_out))
+                    cards_to_create.append(Card(**card_kwargs))
                     if len(cards_to_create) >= batch_size:
                         Card.objects.bulk_create(cards_to_create)
                         created += len(cards_to_create)

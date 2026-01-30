@@ -45,54 +45,42 @@ body {
     <div class="fut-player-card">
         <div class="player-card-top">
             <div class="player-master-info">
-                <div class="player-rating"><span>{% with r=card.data|get_item:"Overall" %}{% if r %}{{ r }}{% else %}{{ card.data|get_item:"Rating" }}{% endif %}{% endwith %}</span></div>
-                <div class="player-position"><span>{{ card.data|get_item:"Position" }}</span></div>
+                <div class="player-rating"><span>{{ card.rating }}</span></div>
+                <div class="player-position"><span>{{ card.position }}</span></div>
                 <div class="player-nation">
-                    {% with nflag=card.data|get_item:"NationPic" %}
-                        {% if not nflag %}{% with nflag=card.data|get_item:"NationFlag" %}{% endwith %}{% endif %}
-                        {% if not nflag %}{% with nflag=card.data|get_item:"NationImage" %}{% endwith %}{% endif %}
-                        {% if nflag and nflag|slice:":4" == "http" %}
-                            <img src="{{ nflag }}" alt="Nation" draggable="false" />
-                        {% endif %}
-                    {% endwith %}
+                    {% if card.nation_pic %}
+                        <img src="{{ card.nation_pic }}" alt="Nation" draggable="false" />
+                    {% endif %}
                 </div>
                 <div class="player-club">
-                    {% with clublogo=card.data|get_item:"ClubPic" %}
-                        {% if not clublogo %}{% with clublogo=card.data|get_item:"ClubLogo" %}{% endwith %}{% endif %}
-                        {% if not clublogo %}{% with clublogo=card.data|get_item:"ClubImage" %}{% endwith %}{% endif %}
-                        {% if clublogo and clublogo|slice:":4" == "http" %}
-                            <img src="{{ clublogo }}" alt="Club" draggable="false" />
-                        {% endif %}
-                    {% endwith %}
+                    {% if card.club_pic %}
+                        <img src="{{ card.club_pic }}" alt="Club" draggable="false" />
+                    {% endif %}
                 </div>
             </div>
             <div class="player-picture">
-                {% with pic=card|player_image %}
-                    {% if pic %}
-                        <img src="{{ pic }}" alt="{{ card.name }}" draggable="false" />
-                    {% endif %}
-                {% endwith %}
+                {% if card.player_pic %}
+                    <img src="{{ card.player_pic }}" alt="{{ card.name }}" draggable="false" />
+                {% endif %}
                 <div class="player-extra">
-                    {% with sm=card.data|get_item:"Skill Moves" wf=card.data|get_item:"Weak Foot" %}
-                        {% if sm %}<span>{{ sm }}*SM</span>{% endif %}
-                        {% if wf %}<span>{{ wf }}*WF</span>{% endif %}
-                    {% endwith %}
+                    {% if card.skills_moves %}<span>{{ card.skills_moves }}*SM</span>{% endif %}
+                    {% if card.weak_foot %}<span>{{ card.weak_foot }}*WF</span>{% endif %}
                 </div>
             </div>
         </div>
         <div class="player-card-bottom">
             <div class="player-info">
-                <div class="player-name"><span>{% if card.name %}{{ card.name|upper }}{% else %}{{ card.data|get_item:"Name"|upper }}{% endif %}</span></div>
+                <div class="player-name"><span>{% if card.name %}{{ card.name|upper }}{% else %}UNKNOWN{% endif %}</span></div>
                 <div class="player-features">
                     <div class="player-features-col">
-                        <span><div class="player-feature-value">{% with v=card.data|get_item:"Pace" %}{{ v }}{% endwith %}</div><div class="player-feature-title">PAC</div></span>
-                        <span><div class="player-feature-value">{% with v=card.data|get_item:"Shooting" %}{{ v }}{% endwith %}</div><div class="player-feature-title">SHO</div></span>
-                        <span><div class="player-feature-value">{% with v=card.data|get_item:"Passing" %}{{ v }}{% endwith %}</div><div class="player-feature-title">PAS</div></span>
+                        <span><div class="player-feature-value">{{ card.pace|default:"-" }}</div><div class="player-feature-title">PAC</div></span>
+                        <span><div class="player-feature-value">{{ card.shooting|default:"-" }}</div><div class="player-feature-title">SHO</div></span>
+                        <span><div class="player-feature-value">{{ card.passing|default:"-" }}</div><div class="player-feature-title">PAS</div></span>
                     </div>
                     <div class="player-features-col">
-                        <span><div class="player-feature-value">{% with v=card.data|get_item:"Dribbling" %}{{ v }}{% endwith %}</div><div class="player-feature-title">DRI</div></span>
-                        <span><div class="player-feature-value">{% with v=card.data|get_item:"Defending" %}{{ v }}{% endwith %}</div><div class="player-feature-title">DEF</div></span>
-                        <span><div class="player-feature-value">{% with v=card.data|get_item:"Physical" %}{{ v }}{% endwith %}</div><div class="player-feature-title">PHY</div></span>
+                        <span><div class="player-feature-value">{{ card.dribbling|default:"-" }}</div><div class="player-feature-title">DRI</div></span>
+                        <span><div class="player-feature-value">{{ card.defending|default:"-" }}</div><div class="player-feature-title">DEF</div></span>
+                        <span><div class="player-feature-value">{{ card.physical|default:"-" }}</div><div class="player-feature-title">PHY</div></span>
                     </div>
                 </div>
             </div>

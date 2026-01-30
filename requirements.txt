@@ -5,3 +5,4 @@ python-dotenv
 django-storages[azure]
 azure-storage-blob
 psycopg2-binary
+firebase-admin

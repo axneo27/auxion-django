@@ -39,21 +39,25 @@
                 {% for col in columns %}
                     {% if col == "Name" %}
                         <td class="name-cell">
-                            {% with pic=row|player_image %}
+                            {% with pic=row.player_pic %}
                                 {% if pic %}
                                     <img src="{{ pic }}" alt="" class="player-thumb" />
                                 {% endif %}
                             {% endwith %}
-                            <a href="/{{ row.external_id }}/">{{ row.data|get_item:"Name" }}</a>
+                            <a href="/{{ row.external_id }}/">{{ row.name }}</a>
                         </td>
                     {% elif col == "Nation" %}
-                        {# Support both Nation and Country keys #}
-                        <td>{% with n=row.data|get_item:"Nation" %}{% if n %}{{ n }}{% else %}{{ row.data|get_item:"Country" }}{% endif %}{% endwith %}</td>
+                        <td>{{ row.country }}</td>
+                    {% elif col == "League" %}
+                        <td>{{ row.league }}</td>
+                    {% elif col == "Club" %}
+                        <td>{{ row.club }}</td>
                     {% elif col == "Overall" %}
-                        {# Support both Overall and Rating keys #}
-                        <td>{% with r=row.data|get_item:"Overall" %}{% if r %}{{ r }}{% else %}{{ row.data|get_item:"Rating" }}{% endif %}{% endwith %}</td>
+                        <td>{{ row.rating }}</td>
+                    {% elif col == "Position" %}
+                        <td>{{ row.position }}</td>
                     {% else %}
-                        <td>{{ row.data|get_item:col }}</td>
+                        <td></td>
                     {% endif %}
                 {% endfor %}
                 <td>

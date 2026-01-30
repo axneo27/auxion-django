@@ -193,3 +193,26 @@ STORAGES = {
         },
     },
 }
+
+# =========================
+# Firebase Configuration
+# =========================
+
+import firebase_admin
+from firebase_admin import credentials
+import json
+
+firebase_service_account_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
+if firebase_service_account_key:
+    # Production: Load from environment variable
+    cred_dict = json.loads(firebase_service_account_key)
+    cred = credentials.Certificate(cred_dict)
+    firebase_admin.initialize_app(cred)
+else:
+    # Development: Load from local file (not committed to repo)
+    try:
+        cred = credentials.Certificate(BASE_DIR / 'auxiondjango-firebase-adminsdk-fbsvc-a335700f6a.json')
+        firebase_admin.initialize_app(cred)
+    except FileNotFoundError:
+        # Firebase not configured, skip initialization
+        pass

@@ -44,5 +44,4 @@ node_modules/
 .env
 .env.*
 
-# Migrations cache (keep actual migration files)
-# Note: Do NOT ignore migration files in apps.
+auxiondjango-firebase-adminsdk-fbsvc-a335700f6a.json

@@ -13,11 +13,9 @@ def get_item(d, key):
 @register.filter(name="player_image")
 def player_image(row):
     try:
-        data = getattr(row, "data", {}) or {}
-        for key in ("Picture", "Image", "Photo", "Headshot", "PlayerPic"):
-            val = data.get(key)
-            if isinstance(val, str) and (val.startswith("http") or val.startswith("/media")):
-                return val
+        pic = getattr(row, "player_pic", "")
+        if isinstance(pic, str) and (pic.startswith("http") or pic.startswith("/media")):
+            return pic
         return ""
     except Exception:
         return ""

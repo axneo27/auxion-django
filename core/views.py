@@ -66,9 +66,9 @@ def list_view(request):
 
 	try:
 		page = int(request.GET.get("page", "1"))
-		per_page = int(request.GET.get("per_page", "20"))
+		per_page = int(request.GET.get("per_page", "10"))
 	except ValueError:
-		page, per_page = 1, 20
+		page, per_page = 1, 10
 	page = max(page, 1)
 	per_page = max(min(per_page, 200), 1)
 
@@ -79,34 +79,21 @@ def list_view(request):
 	position = (request.GET.get("position") or "").strip()
 	search = (request.GET.get("search") or "").strip()
 
-	def contains_json_key_value(queryset, key, value):
-
-		return queryset.filter(data__icontains=f'"{key}": "{value}"')
-
 	if league:
-		qs = contains_json_key_value(qs, "League", league)
+		qs = qs.filter(league__icontains=league)
 	if club:
-		qs = contains_json_key_value(qs, "Club", club)
+		qs = qs.filter(club__icontains=club)
 	if position:
-		qs = contains_json_key_value(qs, "Position", position)
+		qs = qs.filter(position__icontains=position)
 	if search:
-		qs = qs.filter(
-			models.Q(name__icontains=search) | 
-			models.Q(data__icontains=f'"Name": "{search}"')
-		)
+		qs = qs.filter(name__icontains=search)
 
 	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
 
-	def overall_value(card: Card):
-		d = card.data or {}
-		v = d.get("Overall") or d.get("Rating") or "0"
-		try:
-			return int(str(v))
-		except Exception:
-			return 0
-
-	if sort in ("overall_desc", "overall_asc"):
-		qs = sorted(qs, key=overall_value, reverse=(sort == "overall_desc"))
+	if sort == "overall_desc":
+		qs = qs.order_by('-rating')
+	elif sort == "overall_asc":
+		qs = qs.order_by('rating')
 	else:
 		qs = qs.order_by("external_id")
 
@@ -160,8 +147,7 @@ def deleted_cards_view(request):
 				card = Card.objects.get(id=card_id, is_deleted=True)
 
 				try:
-					data = card.data or {}
-					pic = data.get('Picture') or ''
+					pic = card.player_pic or ''
 					if isinstance(pic, str):
 
 						if pic.startswith(settings.MEDIA_URL):
@@ -220,36 +206,31 @@ def create_card_view(request):
 
 		external_id = str(uuid.uuid4())[:8]
 
-		data = {}
-		if name: data['Name'] = name
-		if overall: data['Overall'] = overall
-		if position: data['Position'] = position
-		if nation: data['Nation'] = nation
-		if league: data['League'] = league
-		if club: data['Club'] = club
-		if picture: data['Picture'] = picture
-		if nation_pic: data['NationPic'] = nation_pic
-		if club_pic: data['ClubPic'] = club_pic
-		
-		if pace: data['Pace'] = pace
-		if shooting: data['Shooting'] = shooting
-		if passing: data['Passing'] = passing
-		if dribbling: data['Dribbling'] = dribbling
-		if defending: data['Defending'] = defending
-		if physical: data['Physical'] = physical
-
 		if picture_file:
 			ext = os.path.splitext(picture_file.name)[1].lower()
 			filename = f"players/{uuid.uuid4().hex}{ext}"
 			saved_path = default_storage.save(filename, picture_file)
-			data['Picture'] = f"{settings.MEDIA_URL}{saved_path}"
-
-		data['is_admin_created'] = True
+			player_pic = f"{settings.MEDIA_URL}{saved_path}"
+		else:
+			player_pic = picture
 
 		Card.objects.create(
 			external_id=external_id,
-			name=name or None,
-			data=data
+			name=name,
+			rating=int(overall) if overall.isdigit() else None,
+			position=position,
+			country=nation,
+			league=league,
+			club=club,
+			nation_pic=nation_pic,
+			club_pic=club_pic,
+			player_pic=player_pic,
+			pace=int(pace) if pace.isdigit() else None,
+			shooting=int(shooting) if shooting.isdigit() else None,
+			passing=int(passing) if passing.isdigit() else None,
+			dribbling=int(dribbling) if dribbling.isdigit() else None,
+			defending=int(defending) if defending.isdigit() else None,
+			physical=int(physical) if physical.isdigit() else None,
 		)
 
 		messages.success(request, f'Card "{name}" created successfully with ID: {external_id}.')
@@ -290,55 +271,51 @@ def edit_card_view(request, card_id):
 			messages.error(request, 'Name, Overall Rating, and Position are required.')
 			return redirect('edit_card', card_id=card_id)
 
-		data = card.data or {}
-		data.update({
-			'Name': name,
-			'Overall': overall,
-			'Position': position,
-			'Nation': nation,
-			'League': league,
-			'Club': club,
-			'Picture': picture,
-			'NationPic': nation_pic,
-			'ClubPic': club_pic,
-			'Pace': pace,
-			'Shooting': shooting,
-			'Passing': passing,
-			'Dribbling': dribbling,
-			'Defending': defending,
-			'Physical': physical,
-		})
-
 		picture_file = request.FILES.get('picture_file')
 		if picture_file:
 			ext = os.path.splitext(picture_file.name)[1].lower()
 			filename = f"players/{uuid.uuid4().hex}{ext}"
 			saved_path = default_storage.save(filename, picture_file)
-			data['Picture'] = f"{settings.MEDIA_URL}{saved_path}"
+			player_pic = f"{settings.MEDIA_URL}{saved_path}"
+		else:
+			player_pic = picture
 
-		card.name = name or None
-		card.data = data
+		card.name = name
+		card.rating = int(overall) if overall.isdigit() else None
+		card.position = position
+		card.country = nation
+		card.league = league
+		card.club = club
+		card.nation_pic = nation_pic
+		card.club_pic = club_pic
+		card.player_pic = player_pic
+		card.pace = int(pace) if pace.isdigit() else None
+		card.shooting = int(shooting) if shooting.isdigit() else None
+		card.passing = int(passing) if passing.isdigit() else None
+		card.dribbling = int(dribbling) if dribbling.isdigit() else None
+		card.defending = int(defending) if defending.isdigit() else None
+		card.physical = int(physical) if physical.isdigit() else None
 		card.save()
 
 		messages.success(request, f'Card "{name}" updated successfully.')
 		return redirect('card_list')
 
 	initial_data = {
-		'name': card.name or card.data.get('Name', ''),
-		'overall': card.data.get('Overall', ''),
-		'position': card.data.get('Position', ''),
-		'nation': card.data.get('Nation', ''),
-		'league': card.data.get('League', ''),
-		'club': card.data.get('Club', ''),
-		'picture': card.data.get('Picture', ''),
-		'nation_pic': card.data.get('NationPic', ''),
-		'club_pic': card.data.get('ClubPic', ''),
-		'pace': card.data.get('Pace', ''),
-		'shooting': card.data.get('Shooting', ''),
-		'passing': card.data.get('Passing', ''),
-		'dribbling': card.data.get('Dribbling', ''),
-		'defending': card.data.get('Defending', ''),
-		'physical': card.data.get('Physical', ''),
+		'name': card.name or '',
+		'overall': card.rating or '',
+		'position': card.position or '',
+		'nation': card.country or '',
+		'league': card.league or '',
+		'club': card.club or '',
+		'picture': card.player_pic or '',
+		'nation_pic': card.nation_pic or '',
+		'club_pic': card.club_pic or '',
+		'pace': card.pace or '',
+		'shooting': card.shooting or '',
+		'passing': card.passing or '',
+		'dribbling': card.dribbling or '',
+		'defending': card.defending or '',
+		'physical': card.physical or '',
 	}
 
 	return render(request, "core/edit_card.html", {'card': card, 'initial_data': initial_data, 'form_action': request.path})
@@ -370,16 +347,26 @@ def detail_view(request, item_id: str):
 	except Card.DoesNotExist:
 		raise Http404("Item not found")
 	
-	priority = ["Name", "Position", "Overall", "Club", "Nation"]
-	data = obj.data or {}
+	priority = ["Name", "Position", "Overall", "Club", "Country"]
 	ordered = []
 	seen = set()
 	for key in priority:
-		if key in data:
-			ordered.append((key, data[key]))
+		if key == "Name":
+			value = obj.name
+		elif key == "Position":
+			value = obj.position
+		elif key == "Overall":
+			value = obj.rating
+		elif key == "Club":
+			value = obj.club
+		elif key == "Country":
+			value = obj.country
+		else:
+			continue
+		if value is not None:
+			ordered.append((key, value))
 			seen.add(key)
-	for key in sorted(k for k in data.keys() if k not in seen):
-		ordered.append((key, data[key]))
+	# Add other fields if needed, but for now, keep it simple
 
 	context = {
 		"card": obj,
@@ -400,16 +387,11 @@ def collection_view(request):
 	# Update session with owned_cards
 	request.session['owned_cards'] = json.dumps(owned_cards)
 	
-	# owned_cards is dict {card_id: quantity}
-	owned_cards_list = []
-	for card_id, qty in owned_cards.items():
-		if qty > 0:
-			try:
-				card = Card.objects.get(external_id=card_id)
-				owned_cards_list.append({'card': card, 'qty': qty})
-			except Card.DoesNotExist:
-				pass
-	user_cards = owned_cards_list
+	# Get owned card IDs with quantity > 0
+	owned_card_ids = [card_id for card_id, qty in owned_cards.items() if qty > 0]
+	
+	# Start with queryset of owned cards
+	cards_qs = Card.objects.filter(external_id__in=owned_card_ids, is_deleted=False)
 
 	try:
 		coins = int(request.GET.get('coins', '0'))
@@ -418,9 +400,9 @@ def collection_view(request):
 
 	try:
 		page = int(request.GET.get("page", "1"))
-		per_page = int(request.GET.get("per_page", "50"))
+		per_page = int(request.GET.get("per_page", "10"))
 	except ValueError:
-		page, per_page = 1, 50
+		page, per_page = 1, 10
 	page = max(page, 1)
 	per_page = max(min(per_page, 200), 1)
 
@@ -429,37 +411,33 @@ def collection_view(request):
 	position = (request.GET.get("position") or "").strip()
 	search = (request.GET.get("search") or "").strip()
 
-	def contains_json_key_value(items, key, value):
-		return [item for item in items if f'"{key}": "{value}"' in json.dumps(item['card'].data)]
-
+	# Apply filters to queryset
 	if league:
-		user_cards = contains_json_key_value(user_cards, "League", league)
+		cards_qs = cards_qs.filter(league__icontains=league)
 	if club:
-		user_cards = contains_json_key_value(user_cards, "Club", club)
+		cards_qs = cards_qs.filter(club__icontains=club)
 	if position:
-		user_cards = contains_json_key_value(user_cards, "Position", position)
+		cards_qs = cards_qs.filter(position__icontains=position)
 	if search:
-		user_cards = [item for item in user_cards if search.lower() in (item['card'].name or '').lower() or f'"Name": "{search}"' in json.dumps(item['card'].data)]
+		cards_qs = cards_qs.filter(name__icontains=search)
 
 	sort = (request.GET.get("sort") or "overall_desc").strip().lower()
 
-	def overall_value(item):
-		d = item['card'].data or {}
-		v = d.get("Overall") or d.get("Rating") or "0"
-		try:
-			return int(str(v))
-		except Exception:
-			return 0
-
-	if sort in ("overall_desc", "overall_asc"):
-		user_cards = sorted(user_cards, key=overall_value, reverse=(sort == "overall_desc"))
+	# Apply sorting to queryset
+	if sort == "overall_desc":
+		cards_qs = cards_qs.order_by('-rating')
+	elif sort == "overall_asc":
+		cards_qs = cards_qs.order_by('rating')
 	else:
-		user_cards = sorted(user_cards, key=lambda item: item['card'].external_id)
+		cards_qs = cards_qs.order_by("external_id")
 
-	paginator = Paginator(user_cards, per_page)
+	# Paginate the queryset
+	paginator = Paginator(cards_qs, per_page)
 	page_obj = paginator.get_page(page)
 
-	cards = page_obj.object_list
+	# Create cards list with quantities
+	cards = [{'card': card, 'qty': owned_cards.get(card.external_id, 0)} for card in page_obj.object_list]
+
 	context = {
 		"cards": cards,
 		"columns": ["Name", "Overall", "Position", "Club", "Nation", "Quantity", "Actions"],

@@ -96,17 +96,19 @@
                 {% for col in columns %}
                     {% if col == "Name" %}
                         <td class="name-cell">
-                            {% with pic=item.card|player_image %}
-                                {% if pic %}
-                                    <img src="{{ pic }}" alt="" class="player-thumb" />
-                                {% endif %}
-                            {% endwith %}
-                            <a href="/{{ item.card.external_id }}/">{{ item.card.data.Name }}</a>
+                            {% if item.card.player_pic %}
+                                <img src="{{ item.card.player_pic }}" alt="" class="player-thumb" />
+                            {% endif %}
+                            <a href="/{{ item.card.external_id }}/">{{ item.card.name }}</a>
                         </td>
                     {% elif col == "Overall" %}
-                        <td>{{ item.card.get_rating }}</td>
+                        <td>{{ item.card.rating }}</td>
+                    {% elif col == "Position" %}
+                        <td>{{ item.card.position }}</td>
+                    {% elif col == "Club" %}
+                        <td>{{ item.card.club }}</td>
                     {% elif col == "Nation" %}
-                        <td>{% with n=item.card.data|get_item:"Nation" %}{% if n %}{{ n }}{% else %}{{ item.card.data|get_item:"Country" }}{% endif %}{% endwith %}</td>
+                        <td>{{ item.card.country }}</td>
                     {% elif col == "Quantity" %}
                         <td>{{ item.qty }}</td>
                     {% elif col == "Actions" %}
@@ -114,7 +116,7 @@
                             <button class="btn btn-sm btn-danger" data-card-id="{{ item.card.external_id|escapejs }}" data-price="{{ item.card.quicksell_price }}" onclick="confirmSell(this)">Quicksell ({{ item.card.quicksell_price }} coins)</button>
                         </td>
                     {% else %}
-                        <td>{{ item.card.data|get_item:col }}</td>
+                        <td></td>
                     {% endif %}
                 {% endfor %}
             </tr>
