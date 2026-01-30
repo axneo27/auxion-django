@@ -128,7 +128,7 @@ def add_cards(uid: str, card_ids: Dict[str, int]) -> Dict[str, int]:
 
 
 def decrement_card(uid: str, card_id: str) -> Tuple[Dict[str, int], bool]:
-    """Decrement quantity of a card by 1 if available.
+    """Decrement quantity of a card by 1 if available and remove key at 0.
 
     Returns (new_cards_map, success_flag).
     """
@@ -137,12 +137,12 @@ def decrement_card(uid: str, card_id: str) -> Tuple[Dict[str, int], bool]:
     qty = int(cards.get(card_id, 0))
     if qty <= 0:
         return ({str(k): int(v) for k, v in cards.items()}, False)
-    qty -= 1
-    if qty > 0:
-        cards[card_id] = qty
+    # compute new map and persist by replacing 'cards' field
+    new_qty = qty - 1
+    if new_qty > 0:
+        cards[card_id] = new_qty
     else:
-        # Remove key when hits zero to keep map tidy
         cards.pop(card_id, None)
-    _inv_doc(uid).set({'cards': cards}, merge=True)
-    logger.debug("decrement_card: uid=%s card_id=%s new_qty=%s", uid, card_id, qty)
+    _inv_doc(uid).update({'cards': cards})
+    logger.debug("decrement_card: uid=%s card_id=%s new_qty=%s", uid, card_id, new_qty)
     return ({str(k): int(v) for k, v in cards.items()}, True)
