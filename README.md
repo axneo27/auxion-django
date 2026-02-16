@@ -75,3 +75,114 @@ Notes:
 docker exec -it <container_id_or_name> sh -c "python manage.py import_playersdata --truncate"
 ```
 
+
+## Firebase Auth Setup (Web + Django)
+
+This app uses Firebase Web Auth on the client and Firebase Admin SDK on the server. These brief steps ensure popups/redirect work and the ID token POST succeeds.
+
+- **COOP header (popups):** Add middleware to set `Cross-Origin-Opener-Policy: same-origin-allow-popups`.
+
+```python
+# core/middleware.py
+class COOPSameOriginAllowPopupsMiddleware:
+		def __init__(self, get_response):
+				self.get_response = get_response
+
+		def __call__(self, request):
+				response = self.get_response(request)
+				response["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+				return response
+```
+
+Register it:
+
+```python
+# auxion/settings.py
+MIDDLEWARE = [
+		'django.middleware.security.SecurityMiddleware',
+		'django.contrib.sessions.middleware.SessionMiddleware',
+		'django.middleware.common.CommonMiddleware',
+		'django.middleware.csrf.CsrfViewMiddleware',
+		'django.contrib.auth.middleware.AuthenticationMiddleware',
+		'django.contrib.messages.middleware.MessageMiddleware',
+		'django.middleware.clickjacking.XFrameOptionsMiddleware',
+		'core.middleware.COOPSameOriginAllowPopupsMiddleware',
+]
+```
+
+- **CSRF allowlist (ID token POST):** Ensure your site origin is trusted so the client can POST the Firebase ID token.
+
+```python
+# auxion/settings.py
+CSRF_TRUSTED_ORIGINS = [
+		'https://your-domain.example',
+]
+```
+
+- **Client fallback (popup → redirect):** Use redirect when popups are blocked and handle the redirect result on load.
+
+```html
+<!-- core/templates/core/layout.html -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+const app = initializeApp({ /* public firebaseConfig */ });
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+getRedirectResult(auth).then(async (result) => {
+	if (result && result.user) {
+		const idToken = await result.user.getIdToken();
+		await fetch('/auth/google/', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ id_token: idToken })
+		});
+		location.reload();
+	}
+}).catch(console.error);
+
+document.getElementById('googleLoginBtn')?.addEventListener('click', async () => {
+	try {
+		const r = await signInWithPopup(auth, provider);
+		const idToken = await r.user.getIdToken();
+		await fetch('/auth/google/', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ id_token: idToken })
+		});
+		location.reload();
+	} catch (e) {
+		const code = e?.code || '';
+		if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+			await signInWithRedirect(auth, provider);
+		} else {
+			console.error(e);
+		}
+	}
+});
+</script>
+```
+
+- **Authorized domains:** Add your site domain in Firebase Console → Authentication → Settings → Authorized domains.
+
+- **Cross-origin (optional):** If the frontend is on a different origin than Django, enable CORS.
+
+```bash
+pip install django-cors-headers
+```
+
+```python
+# auxion/settings.py
+INSTALLED_APPS += ['corsheaders']
+MIDDLEWARE = ['corsheaders.middleware.CorsMiddleware'] + MIDDLEWARE
+CORS_ALLOWED_ORIGINS = [
+		'https://your-frontend.example',
+]
+```
+
+Notes:
+- Firebase Web SDK config keys are public by design; keep Admin SDK credentials server-side.
+- See also [core/README.md](core/README.md) for the same snippets near the middleware.
+
